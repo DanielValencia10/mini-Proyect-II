@@ -1,0 +1,35 @@
+# Variables de entorno — NUNCA subir al repositorio
+.env
+.env.local
+.env.*.local
+client/.env
+client/.env.local
+server/.env
+server/.env.local
+
+# Dependencias
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Builds
+client/dist/
+server/dist/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
