@@ -10,9 +10,21 @@ export interface UserData {
 }
 
 type Result = Promise<{ success: boolean; data?: UserData | null }>
+type ResultMany = Promise<{ success: boolean; data?: UserData[] }>
 
 class UserDao {
   private collectionRef = db.collection('users')
+
+  async getAllUsers(): ResultMany {
+    try {
+      const snapshot = await this.collectionRef.get()
+      const data = snapshot.docs.map(doc => doc.data() as UserData)
+      return { success: true, data }
+    } catch (error) {
+      console.error('Error getting users', error)
+      return { success: false, data: [] }
+    }
+  }
 
   async getUserById(id: string): Result {
     try {
