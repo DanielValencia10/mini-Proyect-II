@@ -23,6 +23,12 @@ export const handleUsers = async (
   res: ServerResponse,
   uid?: string,
 ): Promise<void> => {
+  // GET /users
+  if (req.method === 'GET' && !uid) {
+    const result = await dao.getAllUsers()
+    return send(res, result.success ? 200 : 500, result)
+  }
+
   // GET /users/:uid
   if (req.method === 'GET' && uid) {
     const result = await dao.getUserById(uid)
