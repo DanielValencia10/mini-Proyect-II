@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Hash, LogOut, User, Video } from 'lucide-react'
 import useAuthStore from '../stores/useAuthStore'
 import { RoomCard } from '../features/dashboard/RoomCard'
 import { useRooms } from '../hooks/useRooms'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Skeleton from '../components/Skeleton'
+import Toast from '../components/Toast'
 
 
 function Dashboard() {
@@ -15,6 +16,15 @@ function Dashboard() {
     const { rooms, loading, addRoom, removeRoom } = useRooms(userLogged?.uid ?? '')
 
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+    const [welcomeToast, setWelcomeToast] = useState('')
+
+    useEffect(() => {
+        const name = sessionStorage.getItem('sr_welcome')
+        if (name) {
+            setWelcomeToast(`¡Cuenta creada con éxito! Bienvenido, ${name}`)
+            sessionStorage.removeItem('sr_welcome')
+        }
+    }, [])
     const [showCreate, setShowCreate] = useState(false)
     const [showJoin, setShowJoin] = useState(false)
     const [roomName, setRoomName] = useState('')
@@ -146,6 +156,10 @@ function Dashboard() {
                     </div>
                 )}
             </main>
+
+            {welcomeToast && (
+                <Toast message={welcomeToast} onDismiss={() => setWelcomeToast('')} />
+            )}
 
             <ConfirmDialog
                 open={showLogoutConfirm}

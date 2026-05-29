@@ -6,6 +6,15 @@ export default {
   ],
   theme: {
     extend: {
+      keyframes: {
+        toast: {
+          from: { opacity: '0', transform: 'translateY(1rem)' },
+          to:   { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        toast: 'toast 0.3s ease-out',
+      },
       colors: {
         primary: {
           100: '#eff6ff',

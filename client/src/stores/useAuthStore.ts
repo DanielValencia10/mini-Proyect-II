@@ -85,6 +85,7 @@ const useAuthStore = create<AuthState>((set, get) => {
         const result = await createUser({ uid: credential.user.uid, email, username, nombres, apellidos })
         if (!result.success) return { error: 'No se pudo crear la cuenta. Verifica tu conexión' }
         skipAuthCheck = false
+        sessionStorage.setItem('sr_welcome', nombres)
         set({ userLogged: credential.user, needsUsername: false, loading: false })
         return {}
       } catch (err: unknown) {
