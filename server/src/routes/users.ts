@@ -21,8 +21,23 @@ const send = (res: ServerResponse, status: number, data: unknown): void => {
 export const handleUsers = async (
   req: IncomingMessage,
   res: ServerResponse,
-  uid?: string,
+  path: string = '',
 ): Promise<void> => {
+  // GET /users/check-username/:username
+  const checkMatch = path.match(/^\/check-username\/([^/]+)$/)
+  if (req.method === 'GET' && checkMatch) {
+    const result = await dao.checkUsername(decodeURIComponent(checkMatch[1]))
+    return send(res, 200, result)
+  }
+
+  const uid = path.replace(/^\//, '') || undefined
+
+  // GET /users
+  if (req.method === 'GET' && !uid) {
+    const result = await dao.getAllUsers()
+    return send(res, result.success ? 200 : 500, result)
+  }
+
   // GET /users/:uid
   if (req.method === 'GET' && uid) {
     const result = await dao.getUserById(uid)
