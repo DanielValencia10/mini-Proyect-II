@@ -25,10 +25,9 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return
   }
 
-  const usersMatch = url.match(/^\/users\/?([^/]*)$/)
-  if (usersMatch) {
-    const uid = usersMatch[1] || undefined
-    await handleUsers(req, res, uid)
+  if (url.startsWith('/users')) {
+    const subPath = url.slice('/users'.length) || ''
+    await handleUsers(req, res, subPath)
     return
   }
 
