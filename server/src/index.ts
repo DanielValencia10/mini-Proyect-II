@@ -2,6 +2,8 @@ import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { Server } from 'socket.io'
 import { handleUsers } from './routes/users'
 import { handleRooms } from './routes/rooms'
+import { handleApiDocs } from './swagger'
+import { verifyToken } from './middleware/auth'
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173'
 const PORT = process.env.PORT ?? 3000
@@ -25,17 +27,23 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return
   }
 
-  const usersMatch = url.match(/^\/users\/?([^/]*)$/)
-  if (usersMatch) {
-    const uid = usersMatch[1] || undefined
-    await handleUsers(req, res, uid)
+  if (url.startsWith('/users')) {
+    if (!await verifyToken(req, res)) return
+    const subPath = url.slice('/users'.length) || ''
+    await handleUsers(req, res, subPath)
     return
   }
 
   const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/)
   if (roomsMatch) {
+    if (!await verifyToken(req, res)) return
     const id = roomsMatch[1] || undefined
     await handleRooms(req, res, id)
+    return
+  }
+
+  if (url.startsWith('/api-docs')) {
+    handleApiDocs(req, res)
     return
   }
 
