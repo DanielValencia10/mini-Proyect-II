@@ -27,6 +27,12 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return
   }
 
+  if (req.method === 'GET' && url.startsWith('/users/check-username/')) {
+    const subPath = url.slice('/users'.length) || ''
+    await handleUsers(req, res, subPath)
+    return
+  }
+
   if (url.startsWith('/users')) {
     if (!await verifyToken(req, res)) return
     const subPath = url.slice('/users'.length) || ''
