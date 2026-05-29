@@ -78,7 +78,6 @@ function Dashboard() {
                 {showCreate && (
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex gap-3 items-center">
                         <input
-                            autoFocus
                             value={roomName}
                             onChange={e => setRoomName(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleCreate()}
@@ -103,7 +102,6 @@ function Dashboard() {
                 {showJoin && (
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex gap-3 items-center">
                         <input
-                            autoFocus
                             value={joinId}
                             onChange={e => setJoinId(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleJoin()}
