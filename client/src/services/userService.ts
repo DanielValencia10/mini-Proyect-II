@@ -39,3 +39,12 @@ export const deleteUser = async (uid: string) => {
   const res = await fetch(`${BASE_URL}/users/${uid}`, { method: 'DELETE' })
   return res.json() as Promise<{ success: boolean }>
 }
+
+export const checkUsernameAvailable = async (username: string): Promise<{ available: boolean }> => {
+  try {
+    const res = await fetch(`${BASE_URL}/users/check-username/${encodeURIComponent(username)}`)
+    return res.json() as Promise<{ available: boolean }>
+  } catch {
+    return { available: false }
+  }
+}
