@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Plus, Hash, LogOut, User, Video, Loader2 } from 'lucide-react'
+import { Plus, Hash, LogOut, User, Video } from 'lucide-react'
 import useAuthStore from '../stores/useAuthStore'
 import { RoomCard } from '../features/dashboard/RoomCard'
 import { useRooms } from '../hooks/useRooms'
+import ConfirmDialog from '../components/ConfirmDialog'
+import Skeleton from '../components/Skeleton'
 
 
 function Dashboard() {
@@ -12,6 +14,7 @@ function Dashboard() {
 
     const { rooms, loading, addRoom, removeRoom } = useRooms(userLogged?.uid ?? '')
 
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
     const [showCreate, setShowCreate] = useState(false)
     const [showJoin, setShowJoin] = useState(false)
     const [roomName, setRoomName] = useState('')
@@ -46,7 +49,7 @@ function Dashboard() {
                         <p className="font-semibold text-gray-800">{userLogged?.displayName}</p>
                         <p className="text-gray-400">@{username}</p>
                     </div>
-                    <button onClick={logout} aria-label="Cerrar sesión" className="ml-2 text-gray-400 hover:text-red-500 transition-colors">
+                    <button onClick={() => setShowLogoutConfirm(true)} aria-label="Cerrar sesión" className="ml-2 text-gray-400 hover:text-red-500 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 rounded">
                         <LogOut className="h-5 w-5" />
                     </button>
                 </div>
@@ -89,7 +92,7 @@ function Dashboard() {
                             disabled={saving}
                             className="bg-blue-800 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
                         >
-                            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {saving && <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />}
                             Crear
                         </button>
                         <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600 text-sm">
@@ -124,9 +127,14 @@ function Dashboard() {
                 <h2 className="text-xl font-bold text-gray-800 mb-4">Mis Salas</h2>
 
                 {loading ? (
-                    <div className="flex items-center gap-2 text-gray-400">
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                        <span>Cargando salas...</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" aria-busy="true" aria-label="Cargando salas">
+                        {[1, 2, 3].map(i => (
+                            <div key={i} className="bg-white rounded-xl p-6 shadow-sm space-y-3">
+                                <Skeleton className="h-5 w-2/3" />
+                                <Skeleton className="h-4 w-1/2" />
+                                <Skeleton className="h-8 w-full mt-4" />
+                            </div>
+                        ))}
                     </div>
                 ) : rooms.length === 0 ? (
                     <p className="text-gray-400">No tienes salas aún. ¡Crea una!</p>
@@ -138,6 +146,16 @@ function Dashboard() {
                     </div>
                 )}
             </main>
+
+            <ConfirmDialog
+                open={showLogoutConfirm}
+                title="¿Cerrar sesión?"
+                message="Tu sesión se cerrará y serás redirigido al inicio."
+                confirmLabel="Cerrar sesión"
+                cancelLabel="Cancelar"
+                onConfirm={logout}
+                onCancel={() => setShowLogoutConfirm(false)}
+            />
         </div>
     )
 }
