@@ -1,18 +1,6 @@
-import { firebaseAuth } from '../lib/firebase'
+import { authFetch } from '../lib/authFetch'
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL
-
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = await firebaseAuth.currentUser?.getIdToken()
-  return fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {}),
-    },
-  })
-}
 
 export interface UserData {
   uid: string
