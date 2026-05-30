@@ -70,6 +70,19 @@ class UserDao {
       return { success: false }
     }
   }
+
+  async checkUsername(username: string): Promise<{ available: boolean }> {
+    try {
+      const snapshot = await this.collectionRef
+        .where('username', '==', username)
+        .limit(1)
+        .get()
+      return { available: snapshot.empty }
+    } catch (error) {
+      console.error('Error checking username', error)
+      return { available: false }
+    }
+  }
 }
 
 export default UserDao
