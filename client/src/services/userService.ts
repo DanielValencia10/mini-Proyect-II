@@ -23,8 +23,12 @@ export interface UserData {
   avatar?: string
 }
 
-export const getUser = async (uid: string) => {
-  const res = await authFetch(`${BASE_URL}/users/${uid}`)
+export const getUser = async (uid: string, token?: string) => {
+  const res = token
+    ? await fetch(`${BASE_URL}/users/${uid}`, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      })
+    : await authFetch(`${BASE_URL}/users/${uid}`)
   return res.json() as Promise<{ success: boolean; data: UserData | null }>
 }
 

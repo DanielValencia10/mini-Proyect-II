@@ -39,7 +39,8 @@ const useAuthStore = create<AuthState>((set, get) => {
   onAuthStateChanged(firebaseAuth, async (user) => {
     if (skipAuthCheck) return
     if (user) {
-      const result = await getUser(user.uid)
+      const token = await user.getIdToken()
+      const result = await getUser(user.uid, token)
       const hasUsername = result.success && result.data?.username
       set({ userLogged: user, needsUsername: !hasUsername, loading: false })
     } else {
