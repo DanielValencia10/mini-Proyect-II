@@ -18,6 +18,7 @@ type FormErrors = Partial<FormState> & { general?: string }
 export default function ProfilePage() {
   const navigate = useNavigate()
   const { userLogged, updateProfile } = useAuthStore()
+  const isGoogleAccount = userLogged?.providerData?.some(provider => provider.providerId === 'google.com') ?? false
   const [form, setForm] = useState<FormState>({
     nombres: '',
     apellidos: '',
@@ -63,6 +64,7 @@ export default function ProfilePage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+    if (name === 'email' && isGoogleAccount) return
     setForm(f => ({ ...f, [name]: value }))
     setErrors(prev => ({ ...prev, [name]: undefined, general: undefined }))
     if (name === 'username') setUsernameAvailable(null)
@@ -101,15 +103,17 @@ export default function ProfilePage() {
     if (!form.nombres.trim()) newErrors.nombres = 'El nombre es requerido'
     if (!form.apellidos.trim()) newErrors.apellidos = 'El apellido es requerido'
     if (!form.username.trim()) newErrors.username = 'El nombre de usuario es requerido'
-    if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email)) newErrors.email = 'Correo inválido'
+    if (!isGoogleAccount) {
+      if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email)) newErrors.email = 'Correo inválido'
+      if (form.email !== originalForm.email && emailAvailable === false) {
+        newErrors.email = 'Este correo electrónico ya está registrado'
+      }
+    }
     if (form.avatar.trim() && !/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i.test(form.avatar)) {
       newErrors.avatar = 'URL de imagen inválida'
     }
     if (form.username !== originalForm.username && usernameAvailable === false) {
       newErrors.username = 'Este nombre de usuario ya está en uso'
-    }
-    if (form.email !== originalForm.email && emailAvailable === false) {
-      newErrors.email = 'Este correo electrónico ya está registrado'
     }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -125,7 +129,7 @@ export default function ProfilePage() {
       apellidos: form.apellidos,
       username: form.username !== originalForm.username ? form.username : undefined,
       avatar: form.avatar !== originalForm.avatar ? form.avatar : undefined,
-      email: form.email !== originalForm.email ? form.email : undefined,
+      email: !isGoogleAccount && form.email !== originalForm.email ? form.email : undefined,
     })
 
     if (result.error) {
@@ -307,7 +311,7 @@ export default function ProfilePage() {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail size={20} className="text-neutral-400" aria-hidden="true" />
+                  <Mail size={20} className={isGoogleAccount ? 'text-neutral-300' : 'text-neutral-400'} aria-hidden="true" />
                 </div>
                 <input
                   id="email"
@@ -318,13 +322,20 @@ export default function ProfilePage() {
                   onBlur={handleEmailBlur}
                   placeholder="juan.perez@correo.com"
                   required
+                  disabled={isGoogleAccount}
                   aria-invalid={!!errors.email}
                   aria-describedby="email-hint email-error"
-                  className={inputClass('email')}
+                  className={isGoogleAccount
+                    ? 'w-full pl-12 pr-4 py-3 bg-neutral-100 border-2 border-neutral-200 rounded-md text-neutral-600 placeholder:text-neutral-400 cursor-not-allowed disabled:opacity-75'
+                    : inputClass('email')
+                  }
                 />
               </div>
               <p id="email-hint" className="mt-1 text-xs text-neutral-600">
-                {form.email === originalForm.email ? 'Tu correo actual' : 'Se actualizará en tu cuenta'}
+                {isGoogleAccount
+                  ? '📌 Cuenta de Google: El correo no puede ser modificado'
+                  : form.email === originalForm.email ? 'Tu correo actual' : 'Se actualizará en tu cuenta'
+                }
               </p>
               {errors.email && <p id="email-error" role="alert" className="mt-1 text-xs text-error-500">{errors.email}</p>}
             </div>
