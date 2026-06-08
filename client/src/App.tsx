@@ -6,6 +6,7 @@ import RegisterPage from './pages/RegisterPage'
 import UsernameSetupPage from './pages/UsernameSetupPage'
 import Dashboard from './pages/Dashboard'
 import RoomPage from './pages/RoomPage'
+import ProfilePage from './pages/ProfilePage'
 
 function LoadingScreen() {
   return (
@@ -48,6 +49,7 @@ function App() {
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/setup-username" element={<UsernameRoute><UsernameSetupPage /></UsernameRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/room/:id" element={<ProtectedRoute><RoomPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
