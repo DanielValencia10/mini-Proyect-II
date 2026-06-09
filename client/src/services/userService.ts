@@ -52,3 +52,24 @@ export const checkUsernameAvailable = async (username: string): Promise<{ availa
     return { available: false }
   }
 }
+
+export const checkEmailAvailable = async (email: string, currentUid?: string): Promise<{ available: boolean }> => {
+  try {
+    const url = currentUid
+      ? `${BASE_URL}/users/check-email/${encodeURIComponent(email)}?excludeUid=${encodeURIComponent(currentUid)}`
+      : `${BASE_URL}/users/check-email/${encodeURIComponent(email)}`
+    const res = await fetch(url)
+    return res.json() as Promise<{ available: boolean }>
+  } catch {
+    return { available: false }
+  }
+}
+
+export const checkUsernameAvailableForUpdate = async (username: string, currentUid: string): Promise<{ available: boolean }> => {
+  try {
+    const res = await fetch(`${BASE_URL}/users/check-username/${encodeURIComponent(username)}?excludeUid=${encodeURIComponent(currentUid)}`)
+    return res.json() as Promise<{ available: boolean }>
+  } catch {
+    return { available: false }
+  }
+}
