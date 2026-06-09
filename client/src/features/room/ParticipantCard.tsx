@@ -5,9 +5,10 @@ interface Props {
     speaking: boolean;
     stream?: MediaStream | null;
     isLocal?: boolean;
+    className?: string;
 }
 
-export function ParticipantCard({ name, speaking, stream, isLocal = false }: Props) {
+export function ParticipantCard({ name, speaking, stream, isLocal = false, className = '' }: Props) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isVideoActive, setIsVideoActive] = useState(false);
 
@@ -76,13 +77,13 @@ export function ParticipantCard({ name, speaking, stream, isLocal = false }: Pro
     }, [stream, isLocal]);
 
     return (
-        <div
-            className={`relative rounded-2xl overflow-hidden w-full h-full flex items-center justify-center transition-all duration-300
-        ${speaking
-                    ? 'bg-gradient-to-br from-blue-950 to-blue-900 ring-2 ring-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)]'
-                    : 'bg-gradient-to-br from-gray-900 to-gray-800'
-                }`}
-        >
+
+        <div className={`relative rounded-2xl overflow-hidden w-full h-full flex items-center justify-center transition-all duration-300
+            ${speaking
+                ? 'bg-gradient-to-br from-blue-950 to-blue-900 ring-2 ring-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)]'
+                : 'bg-gradient-to-br from-gray-900 to-gray-800'
+            } ${className}`}>
+
             {!isVideoActive && (
                 <div
                     className="absolute inset-0 opacity-10"
