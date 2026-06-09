@@ -14,11 +14,7 @@ import {
 import { firebaseAuth } from '../lib/firebase'
 import { getUser, createUser, updateUser, deleteUser } from '../services/userService'
 
-const INSTITUTIONAL_DOMAIN = 'correounivalle.edu.co'
-
-function isInstitutionalEmail(email: string) {
-  return email.endsWith(`@${INSTITUTIONAL_DOMAIN}`)
-}
+import { INSTITUTIONAL_DOMAIN, isInstitutionalEmail } from '../constants/auth'
 
 interface RegisterData {
   nombres: string
