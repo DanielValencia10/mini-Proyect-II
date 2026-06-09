@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   onAuthStateChanged,
+  onIdTokenChanged,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -25,6 +26,7 @@ interface AuthState {
   userLogged: User | null
   loading: boolean
   needsUsername: boolean
+  token: string | null
   loginWithGoogle: () => Promise<{ error?: string }>
   loginWithEmail: (email: string, password: string) => Promise<{ error?: string }>
   registerWithEmail: (data: RegisterData) => Promise<{ error?: string }>
@@ -37,6 +39,7 @@ interface AuthState {
 let skipAuthCheck = false
 
 const useAuthStore = create<AuthState>((set, get) => {
+
   onAuthStateChanged(firebaseAuth, async (user) => {
     if (skipAuthCheck) return
     if (user) {
@@ -49,10 +52,20 @@ const useAuthStore = create<AuthState>((set, get) => {
     }
   })
 
+  onIdTokenChanged(firebaseAuth, async (user) => {
+    if (user) {
+      const newToken = await user.getIdToken()
+      set({ token: newToken })
+    } else {
+      set({ token: null })
+    }
+  })
+
   return {
     userLogged: null,
     loading: true,
     needsUsername: false,
+    token: null,
 
     loginWithGoogle: async () => {
       try {
