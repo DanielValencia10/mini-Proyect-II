@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   onAuthStateChanged,
+  onIdTokenChanged,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -11,7 +12,7 @@ import {
   User,
 } from 'firebase/auth'
 import { firebaseAuth } from '../lib/firebase'
-import { getUser, createUser } from '../services/userService'
+import { getUser, createUser, updateUser } from '../services/userService'
 
 interface RegisterData {
   nombres: string
@@ -25,21 +26,25 @@ interface AuthState {
   userLogged: User | null
   loading: boolean
   needsUsername: boolean
+  token: string | null
   loginWithGoogle: () => Promise<{ error?: string }>
   loginWithEmail: (email: string, password: string) => Promise<{ error?: string }>
   registerWithEmail: (data: RegisterData) => Promise<{ error?: string }>
   sendPasswordReset: (email: string) => Promise<{ success: boolean }>
   completeProfile: (username: string) => Promise<{ error?: string }>
+  updateProfile: (data: { nombres?: string; apellidos?: string; username?: string; avatar?: string; email?: string }) => Promise<{ error?: string }>
   logout: () => Promise<void>
 }
 
 let skipAuthCheck = false
 
 const useAuthStore = create<AuthState>((set, get) => {
+
   onAuthStateChanged(firebaseAuth, async (user) => {
     if (skipAuthCheck) return
     if (user) {
-      const result = await getUser(user.uid)
+      const token = await user.getIdToken()
+      const result = await getUser(user.uid, token)
       const hasUsername = result.success && result.data?.username
       set({ userLogged: user, needsUsername: !hasUsername, loading: false })
     } else {
@@ -47,10 +52,20 @@ const useAuthStore = create<AuthState>((set, get) => {
     }
   })
 
+  onIdTokenChanged(firebaseAuth, async (user) => {
+    if (user) {
+      const newToken = await user.getIdToken()
+      set({ token: newToken })
+    } else {
+      set({ token: null })
+    }
+  })
+
   return {
     userLogged: null,
     loading: true,
     needsUsername: false,
+    token: null,
 
     loginWithGoogle: async () => {
       try {
@@ -129,6 +144,22 @@ const useAuthStore = create<AuthState>((set, get) => {
     logout: async () => {
       await signOut(firebaseAuth)
       set({ userLogged: null, needsUsername: false })
+    },
+
+    updateProfile: async (data) => {
+      const user = get().userLogged
+      if (!user) return { error: 'No hay sesión activa' }
+      try {
+        if (data.nombres || data.apellidos) {
+          const displayName = `${data.nombres || user.displayName?.split(' ')[0]} ${data.apellidos || user.displayName?.split(' ').slice(1).join(' ')}`.trim()
+          await updateProfile(user, { displayName })
+        }
+        const result = await updateUser(user.uid, data)
+        if (!result.success) return { error: 'No se pudo actualizar tu perfil. Intenta de nuevo' }
+        return {}
+      } catch {
+        return { error: 'No se pudo actualizar tu perfil. Intenta de nuevo' }
+      }
     },
   }
 })
