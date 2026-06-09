@@ -5,7 +5,7 @@ import useAuthStore from '../stores/useAuthStore'
 import { checkUsernameAvailableForUpdate, getUser } from '../services/userService'
 import Toast from '../components/Toast'
 import ConfirmDialog from '../components/ConfirmDialog'
-
+import { INSTITUTIONAL_DOMAIN, isInstitutionalEmail } from '../constants/auth'
 interface FormState {
   nombres: string
   apellidos: string
@@ -123,8 +123,8 @@ export default function ProfilePage() {
     if (!isGoogleAccount) {
       if (!editForm.email.trim() || !/\S+@\S+\.\S+/.test(editForm.email)) {
         newErrors.email = 'Correo inválido'
-      } else if (!editForm.email.endsWith('@correounivalle.edu.co')) {
-        newErrors.email = 'Solo se permiten correos @correounivalle.edu.co'
+      } else if (!isInstitutionalEmail(editForm.email)) {
+        newErrors.email = `Solo se permiten correos institucionales (ej: @universidad.edu.co)`
       }
     }
     if (editForm.avatar.trim() && !/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i.test(editForm.avatar)) {
