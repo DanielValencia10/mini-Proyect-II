@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
 export function useRoom(userName: string) {
-    const [micOn, setMicOn] = useState(true)
-    const [camOn, setCamOn] = useState(true)
+    const [camOn, setCamOn] = useState(false);
+    const [micOn, setMicOn] = useState(false);
     const [chatOpen, setChatOpen] = useState(false)
     const [message, setMessage] = useState('')
     const [messages, setMessages] = useState<{ id: number; author: string; text: string }[]>([])
