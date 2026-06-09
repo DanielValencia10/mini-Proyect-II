@@ -12,7 +12,7 @@ import {
   User,
 } from 'firebase/auth'
 import { firebaseAuth } from '../lib/firebase'
-import { getUser, createUser, updateUser } from '../services/userService'
+import { getUser, createUser, updateUser, deleteUser } from '../services/userService'
 
 interface RegisterData {
   nombres: string
@@ -34,6 +34,7 @@ interface AuthState {
   completeProfile: (username: string) => Promise<{ error?: string }>
   updateProfile: (data: { nombres?: string; apellidos?: string; username?: string; avatar?: string; email?: string }) => Promise<{ error?: string }>
   logout: () => Promise<void>
+  deleteUserAccount: () => Promise<{ error?: string }>
 }
 
 let skipAuthCheck = false
@@ -144,6 +145,31 @@ const useAuthStore = create<AuthState>((set, get) => {
     logout: async () => {
       await signOut(firebaseAuth)
       set({ userLogged: null, needsUsername: false })
+    },
+
+    deleteUserAccount: async () => {
+      const user = get().userLogged
+      if (!user) return { error: 'No hay sesión activa' }
+      try {
+        // 1. Eliminar datos en la base de datos backend (Firestore)
+        const result = await deleteUser(user.uid)
+        if (!result.success) {
+          return { error: 'No se pudo eliminar la cuenta de la base de datos. Intente de nuevo' }
+        }
+        // 2. Eliminar el usuario de Firebase Auth
+        await user.delete()
+        // 3. Resetear el estado
+        set({ userLogged: null, needsUsername: false })
+        return {}
+      } catch (err: unknown) {
+        console.error(err)
+        // A veces Firebase Auth requiere que el usuario haya iniciado sesión recientemente para poder eliminarse
+        const code = (err as { code?: string }).code
+        if (code === 'auth/requires-recent-login') {
+          return { error: 'Por seguridad, esta acción requiere que inicies sesión de nuevo antes de poder eliminar tu cuenta.' }
+        }
+        return { error: 'No se pudo eliminar el usuario de Firebase Auth. Intente de nuevo' }
+      }
     },
 
     updateProfile: async (data) => {
