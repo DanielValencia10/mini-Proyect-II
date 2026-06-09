@@ -28,18 +28,25 @@ export function useSocket(roomId: string) {
     useEffect(() => {
         if (!uid || !token) return;
 
-        // Si el socket existe pero el token ha cambiado, lo cerramos
-        if (socket && (socket as any).auth?.token !== token) {
-            socket.disconnect();
-            socket = null;
+        // Obtenemos el socket actual desde la referencia para evitar mutar variables externas
+        const currentSocket = socketRef.current;
+
+        if (currentSocket) {
+            const socketAuth = (currentSocket as unknown as { auth?: { token?: string } }).auth;
+
+            if (socketAuth?.token !== token) {
+                currentSocket.disconnect();
+                socketRef.current = null;
+            }
         }
 
-        if (!socket) {
-            socket = io(import.meta.env.VITE_BACKEND_URL, {
+        if (!socketRef.current) {
+            const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
                 auth: { token },
             });
-            socketRef.current = socket;
+            socketRef.current = newSocket;
         }
+
     }, [token, uid]);
 
     // Manejo de la sala y escucha de participantes

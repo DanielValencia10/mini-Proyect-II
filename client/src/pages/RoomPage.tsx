@@ -219,7 +219,7 @@ function RoomPage() {
         if (!text || !socket) return;
         socket.emit('send_message', { roomId: id, message: text });
         room.setMessage('');
-    }, [room.message, socket, id, room.setMessage]);
+    }, [room, socket, id, room.setMessage]);
 
     const handleLeaveRoom = useCallback(() => {
         leaveCall();

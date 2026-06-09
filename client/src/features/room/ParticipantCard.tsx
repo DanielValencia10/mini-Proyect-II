@@ -94,6 +94,7 @@ export function ParticipantCard({ name, speaking, stream, isLocal = false }: Pro
                 />
             )}
 
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <video
                 ref={videoRef}
                 autoPlay

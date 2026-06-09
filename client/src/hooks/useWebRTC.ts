@@ -215,10 +215,25 @@ export function useWebRTC(
 
   // ── Limpieza total al desmontar el hook ───────────────────────────
   useEffect(() => {
+    const currentSocket = socketRef.current;
+    const currentRoomId = roomIdRef.current;
+    const currentConnections = peerConnections.current;
+
     return () => {
-      socketRef.current?.emit('leave-call', { roomId: roomIdRef.current });
-      peerConnections.current.forEach((pc) => pc.close());
-      peerConnections.current.clear();
+      console.log("Limpiando y cerrando todas las conexiones...");
+
+      // Notificar la salida usando la copia local del socket
+      if (currentSocket && currentRoomId) {
+        currentSocket.emit('leave-call', { roomId: currentRoomId });
+      }
+
+      // Cerrar cada RTCPeerConnection usando la copia local del mapa
+      currentConnections.forEach((pc) => {
+        pc.close();
+      });
+
+      // Limpiar el mapa real y el estado de la UI
+      currentConnections.clear();
       setRemoteStreams([]);
     };
   }, []);

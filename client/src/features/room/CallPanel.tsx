@@ -101,6 +101,7 @@ const RemoteVideo: React.FC<{ stream: MediaStream; userId: string }> = ({ stream
   }, [stream]);
   return (
     <div className="relative">
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video ref={videoRef} autoPlay playsInline className="w-full rounded bg-black" />
       <span className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 rounded">{userId}</span>
     </div>
