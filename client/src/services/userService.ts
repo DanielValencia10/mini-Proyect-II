@@ -1,18 +1,6 @@
-import { firebaseAuth } from '../lib/firebase'
+import { authFetch } from '../lib/authFetch'
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL
-
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = await firebaseAuth.currentUser?.getIdToken()
-  return fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {}),
-    },
-  })
-}
 
 export interface UserData {
   uid: string
@@ -23,8 +11,12 @@ export interface UserData {
   avatar?: string
 }
 
-export const getUser = async (uid: string) => {
-  const res = await authFetch(`${BASE_URL}/users/${uid}`)
+export const getUser = async (uid: string, token?: string) => {
+  const res = token
+    ? await fetch(`${BASE_URL}/users/${uid}`, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      })
+    : await authFetch(`${BASE_URL}/users/${uid}`)
   return res.json() as Promise<{ success: boolean; data: UserData | null }>
 }
 
@@ -55,6 +47,27 @@ export const deleteUser = async (uid: string) => {
 export const checkUsernameAvailable = async (username: string): Promise<{ available: boolean }> => {
   try {
     const res = await fetch(`${BASE_URL}/users/check-username/${encodeURIComponent(username)}`)
+    return res.json() as Promise<{ available: boolean }>
+  } catch {
+    return { available: false }
+  }
+}
+
+export const checkEmailAvailable = async (email: string, currentUid?: string): Promise<{ available: boolean }> => {
+  try {
+    const url = currentUid
+      ? `${BASE_URL}/users/check-email/${encodeURIComponent(email)}?excludeUid=${encodeURIComponent(currentUid)}`
+      : `${BASE_URL}/users/check-email/${encodeURIComponent(email)}`
+    const res = await fetch(url)
+    return res.json() as Promise<{ available: boolean }>
+  } catch {
+    return { available: false }
+  }
+}
+
+export const checkUsernameAvailableForUpdate = async (username: string, currentUid: string): Promise<{ available: boolean }> => {
+  try {
+    const res = await fetch(`${BASE_URL}/users/check-username/${encodeURIComponent(username)}?excludeUid=${encodeURIComponent(currentUid)}`)
     return res.json() as Promise<{ available: boolean }>
   } catch {
     return { available: false }

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Hash, LogOut, User, Video } from 'lucide-react'
+import { Plus, Hash, LogOut, User, Video, Settings } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../stores/useAuthStore'
+import { getUser } from '../services/userService'
 import { RoomCard } from '../features/dashboard/RoomCard'
 import { useRooms } from '../hooks/useRooms'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -9,14 +11,32 @@ import Toast from '../components/Toast'
 
 
 function Dashboard() {
+    const navigate = useNavigate()
     const { userLogged, logout } = useAuthStore()
     const firstName = userLogged?.displayName?.split(' ')[0] ?? 'Estudiante'
     const username = userLogged?.email?.split('@')[0] ?? ''
+    const [avatar, setAvatar] = useState<string | null>(null)
 
     const { rooms, loading, addRoom, removeRoom } = useRooms(userLogged?.uid ?? '')
 
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
     const [welcomeToast, setWelcomeToast] = useState('')
+
+    useEffect(() => {
+        const loadUserAvatar = async () => {
+            if (!userLogged) return
+            try {
+                const token = await userLogged.getIdToken()
+                const result = await getUser(userLogged.uid, token)
+                if (result.success && result.data?.avatar) {
+                    setAvatar(result.data.avatar)
+                }
+            } catch (err) {
+                console.error('Error cargando avatar:', err)
+            }
+        }
+        loadUserAvatar()
+    }, [userLogged])
 
     useEffect(() => {
         const name = sessionStorage.getItem('sr_welcome')
@@ -54,11 +74,30 @@ function Dashboard() {
                     <span className="text-xl font-bold text-gray-800">StudyRoom</span>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="bg-gray-100 rounded-full p-2"><User className="h-5 w-5 text-gray-500" /></div>
-                    <div className="text-sm">
-                        <p className="font-semibold text-gray-800">{userLogged?.displayName}</p>
-                        <p className="text-gray-400">@{username}</p>
-                    </div>
+                    <button
+                        onClick={() => navigate('/profile')}
+                        className="bg-gray-100 rounded-full p-2 hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        aria-label="Editar perfil"
+                    >
+                        <Settings className="h-5 w-5 text-gray-500" />
+                    </button>
+                    <button
+                        onClick={() => navigate('/profile')}
+                        className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 rounded px-2 py-1"
+                        aria-label="Ver perfil"
+                    >
+                        <div className="bg-gray-100 rounded-full p-1 flex-shrink-0 w-10 h-10 flex items-center justify-center overflow-hidden">
+                            {avatar ? (
+                                <img src={avatar} alt="Avatar" className="w-full h-full object-cover rounded-full" />
+                            ) : (
+                                <User className="h-5 w-5 text-gray-500" />
+                            )}
+                        </div>
+                        <div className="text-sm min-w-0">
+                            <p className="font-semibold text-gray-800 truncate">{userLogged?.displayName}</p>
+                            <p className="text-gray-400 truncate">@{username}</p>
+                        </div>
+                    </button>
                     <button onClick={() => setShowLogoutConfirm(true)} aria-label="Cerrar sesión" className="ml-2 text-gray-400 hover:text-red-500 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 rounded">
                         <LogOut className="h-5 w-5" />
                     </button>

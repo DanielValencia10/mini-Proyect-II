@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   onAuthStateChanged,
+  onIdTokenChanged,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -11,7 +12,7 @@ import {
   User,
 } from 'firebase/auth'
 import { firebaseAuth } from '../lib/firebase'
-import { getUser, createUser } from '../services/userService'
+import { getUser, createUser, updateUser, deleteUser } from '../services/userService'
 
 interface RegisterData {
   nombres: string
@@ -25,21 +26,26 @@ interface AuthState {
   userLogged: User | null
   loading: boolean
   needsUsername: boolean
+  token: string | null
   loginWithGoogle: () => Promise<{ error?: string }>
   loginWithEmail: (email: string, password: string) => Promise<{ error?: string }>
   registerWithEmail: (data: RegisterData) => Promise<{ error?: string }>
   sendPasswordReset: (email: string) => Promise<{ success: boolean }>
   completeProfile: (username: string) => Promise<{ error?: string }>
+  updateProfile: (data: { nombres?: string; apellidos?: string; username?: string; avatar?: string; email?: string }) => Promise<{ error?: string }>
   logout: () => Promise<void>
+  deleteUserAccount: () => Promise<{ error?: string }>
 }
 
 let skipAuthCheck = false
 
 const useAuthStore = create<AuthState>((set, get) => {
+
   onAuthStateChanged(firebaseAuth, async (user) => {
     if (skipAuthCheck) return
     if (user) {
-      const result = await getUser(user.uid)
+      const token = await user.getIdToken()
+      const result = await getUser(user.uid, token)
       const hasUsername = result.success && result.data?.username
       set({ userLogged: user, needsUsername: !hasUsername, loading: false })
     } else {
@@ -47,10 +53,20 @@ const useAuthStore = create<AuthState>((set, get) => {
     }
   })
 
+  onIdTokenChanged(firebaseAuth, async (user) => {
+    if (user) {
+      const newToken = await user.getIdToken()
+      set({ token: newToken })
+    } else {
+      set({ token: null })
+    }
+  })
+
   return {
     userLogged: null,
     loading: true,
     needsUsername: false,
+    token: null,
 
     loginWithGoogle: async () => {
       try {
@@ -129,6 +145,47 @@ const useAuthStore = create<AuthState>((set, get) => {
     logout: async () => {
       await signOut(firebaseAuth)
       set({ userLogged: null, needsUsername: false })
+    },
+
+    deleteUserAccount: async () => {
+      const user = get().userLogged
+      if (!user) return { error: 'No hay sesión activa' }
+      try {
+        // 1. Eliminar datos en la base de datos backend (Firestore)
+        const result = await deleteUser(user.uid)
+        if (!result.success) {
+          return { error: 'No se pudo eliminar la cuenta de la base de datos. Intente de nuevo' }
+        }
+        // 2. Eliminar el usuario de Firebase Auth
+        await user.delete()
+        // 3. Resetear el estado
+        set({ userLogged: null, needsUsername: false })
+        return {}
+      } catch (err: unknown) {
+        console.error(err)
+        // A veces Firebase Auth requiere que el usuario haya iniciado sesión recientemente para poder eliminarse
+        const code = (err as { code?: string }).code
+        if (code === 'auth/requires-recent-login') {
+          return { error: 'Por seguridad, esta acción requiere que inicies sesión de nuevo antes de poder eliminar tu cuenta.' }
+        }
+        return { error: 'No se pudo eliminar el usuario de Firebase Auth. Intente de nuevo' }
+      }
+    },
+
+    updateProfile: async (data) => {
+      const user = get().userLogged
+      if (!user) return { error: 'No hay sesión activa' }
+      try {
+        if (data.nombres || data.apellidos) {
+          const displayName = `${data.nombres || user.displayName?.split(' ')[0]} ${data.apellidos || user.displayName?.split(' ').slice(1).join(' ')}`.trim()
+          await updateProfile(user, { displayName })
+        }
+        const result = await updateUser(user.uid, data)
+        if (!result.success) return { error: 'No se pudo actualizar tu perfil. Intenta de nuevo' }
+        return {}
+      } catch {
+        return { error: 'No se pudo actualizar tu perfil. Intenta de nuevo' }
+      }
     },
   }
 })
