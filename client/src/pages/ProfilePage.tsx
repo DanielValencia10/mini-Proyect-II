@@ -4,6 +4,7 @@ import { ArrowLeft, User, Mail, Loader, Edit2, X, Check } from 'lucide-react'
 import useAuthStore from '../stores/useAuthStore'
 import { checkUsernameAvailableForUpdate, getUser } from '../services/userService'
 import Toast from '../components/Toast'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 interface FormState {
   nombres: string
@@ -17,7 +18,7 @@ type FormErrors = Partial<FormState> & { general?: string }
 
 export default function ProfilePage() {
   const navigate = useNavigate()
-  const { userLogged, updateProfile } = useAuthStore()
+  const { userLogged, updateProfile, deleteUserAccount } = useAuthStore()
   const isGoogleAccount = userLogged?.providerData?.some(provider => provider.providerId === 'google.com') ?? false
 
   const [profileData, setProfileData] = useState<FormState>({
@@ -33,9 +34,23 @@ export default function ProfilePage() {
   const [errors, setErrors] = useState<FormErrors>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [checkingUsername, setCheckingUsername] = useState(false)
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
+
+  const handleDeleteAccount = async () => {
+    setShowDeleteConfirm(false)
+    setDeleting(true)
+    const result = await deleteUserAccount()
+    setDeleting(false)
+    if (result.error) {
+      setErrors({ general: result.error })
+    } else {
+      navigate('/login')
+    }
+  }
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -106,7 +121,11 @@ export default function ProfilePage() {
     if (!editForm.apellidos.trim()) newErrors.apellidos = 'El apellido es requerido'
     if (!editForm.username.trim()) newErrors.username = 'El nombre de usuario es requerido'
     if (!isGoogleAccount) {
-      if (!editForm.email.trim() || !/\S+@\S+\.\S+/.test(editForm.email)) newErrors.email = 'Correo inválido'
+      if (!editForm.email.trim() || !/\S+@\S+\.\S+/.test(editForm.email)) {
+        newErrors.email = 'Correo inválido'
+      } else if (!editForm.email.endsWith('@correounivalle.edu.co')) {
+        newErrors.email = 'Solo se permiten correos @correounivalle.edu.co'
+      }
     }
     if (editForm.avatar.trim() && !/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i.test(editForm.avatar)) {
       newErrors.avatar = 'URL de imagen inválida'
@@ -143,10 +162,9 @@ export default function ProfilePage() {
   }
 
   const inputClass = (field: keyof FormState, isEdit: boolean) =>
-    `w-full pl-12 pr-4 py-3 bg-neutral-white border-2 rounded-md text-neutral-950 placeholder:text-neutral-400 transition-colors duration-200 ${
-      isEdit
-        ? `focus:outline-none focus:ring-2 focus:ring-primary-100 ${errors[field] ? 'border-error-500 focus:border-error-500' : 'border-neutral-200 focus:border-primary-500'}`
-        : 'border-neutral-200 cursor-default'
+    `w-full pl-12 pr-4 py-3 bg-neutral-white border-2 rounded-md text-neutral-950 placeholder:text-neutral-400 transition-colors duration-200 ${isEdit
+      ? `focus:outline-none focus:ring-2 focus:ring-primary-100 ${errors[field] ? 'border-error-500 focus:border-error-500' : 'border-neutral-200 focus:border-primary-500'}`
+      : 'border-neutral-200 cursor-default'
     }`
 
   if (loading) {
@@ -379,7 +397,7 @@ export default function ProfilePage() {
             )}
 
             {/* Buttons */}
-            {isEditing && (
+            {isEditing ? (
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
@@ -409,16 +427,32 @@ export default function ProfilePage() {
                   Cancelar
                 </button>
               </div>
-            )}
+            ) : (
+              <div className="space-y-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard')}
+                  className="w-full px-6 py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-950 font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                >
+                  Volver al Dashboard
+                </button>
 
-            {!isEditing && (
-              <button
-                type="button"
-                onClick={() => navigate('/dashboard')}
-                className="w-full px-6 py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-950 font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-300"
-              >
-                Volver al Dashboard
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={deleting}
+                  className="w-full px-6 py-3 bg-red-50 hover:bg-red-100 text-red-600 font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-300 flex items-center justify-center gap-2"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader className="h-4 w-4 animate-spin" />
+                      Eliminando cuenta...
+                    </>
+                  ) : (
+                    'Eliminar Cuenta'
+                  )}
+                </button>
+              </div>
             )}
           </form>
         </div>
@@ -427,6 +461,16 @@ export default function ProfilePage() {
       {successMsg && (
         <Toast message={successMsg} onDismiss={() => setSuccessMsg('')} />
       )}
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="¿Eliminar cuenta?"
+        message="Esta acción es permanente y eliminará todos tus datos. No podrás recuperar tu cuenta."
+        confirmLabel="Eliminar permanentemente"
+        cancelLabel="Cancelar"
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   )
 }
