@@ -5,7 +5,7 @@ import useAuthStore from '../stores/useAuthStore'
 import { checkUsernameAvailableForUpdate, getUser } from '../services/userService'
 import Toast from '../components/Toast'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { INSTITUTIONAL_DOMAIN, isInstitutionalEmail } from '../constants/auth'
+import { isInstitutionalEmail } from '../constants/auth'
 interface FormState {
   nombres: string
   apellidos: string
