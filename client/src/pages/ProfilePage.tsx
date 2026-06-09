@@ -121,7 +121,11 @@ export default function ProfilePage() {
     if (!editForm.apellidos.trim()) newErrors.apellidos = 'El apellido es requerido'
     if (!editForm.username.trim()) newErrors.username = 'El nombre de usuario es requerido'
     if (!isGoogleAccount) {
-      if (!editForm.email.trim() || !/\S+@\S+\.\S+/.test(editForm.email)) newErrors.email = 'Correo inválido'
+      if (!editForm.email.trim() || !/\S+@\S+\.\S+/.test(editForm.email)) {
+        newErrors.email = 'Correo inválido'
+      } else if (!editForm.email.endsWith('@correounivalle.edu.co')) {
+        newErrors.email = 'Solo se permiten correos @correounivalle.edu.co'
+      }
     }
     if (editForm.avatar.trim() && !/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i.test(editForm.avatar)) {
       newErrors.avatar = 'URL de imagen inválida'
@@ -158,10 +162,9 @@ export default function ProfilePage() {
   }
 
   const inputClass = (field: keyof FormState, isEdit: boolean) =>
-    `w-full pl-12 pr-4 py-3 bg-neutral-white border-2 rounded-md text-neutral-950 placeholder:text-neutral-400 transition-colors duration-200 ${
-      isEdit
-        ? `focus:outline-none focus:ring-2 focus:ring-primary-100 ${errors[field] ? 'border-error-500 focus:border-error-500' : 'border-neutral-200 focus:border-primary-500'}`
-        : 'border-neutral-200 cursor-default'
+    `w-full pl-12 pr-4 py-3 bg-neutral-white border-2 rounded-md text-neutral-950 placeholder:text-neutral-400 transition-colors duration-200 ${isEdit
+      ? `focus:outline-none focus:ring-2 focus:ring-primary-100 ${errors[field] ? 'border-error-500 focus:border-error-500' : 'border-neutral-200 focus:border-primary-500'}`
+      : 'border-neutral-200 cursor-default'
     }`
 
   if (loading) {
