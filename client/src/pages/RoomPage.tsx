@@ -119,7 +119,8 @@ function RoomPage() {
     const { userLogged } = useAuthStore();
     const room = useRoom(userLogged?.displayName ?? 'Anónimo');
 
-    const { participants: socketParticipants, socket } = useSocket(id ?? '');
+    // isConnected es un estado real → los useEffect reaccionan cuando el socket se conecta
+    const { participants: socketParticipants, socket, isConnected } = useSocket(id ?? '');
     const currentUserId = userLogged?.uid ?? '';
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -180,7 +181,7 @@ function RoomPage() {
 
     // ── Sincronización de pista de video y notificación al socket ────────
     useEffect(() => {
-        if (!localStream) return;
+        if (!localStream || !isConnected) return;
         localStream.getVideoTracks().forEach(track => (track.enabled = room.camOn));
 
         if (socket && id) {
@@ -191,35 +192,39 @@ function RoomPage() {
                 micOn: room.micOn,
             });
         }
-    }, [room.camOn, room.micOn, localStream, socket, id, currentUserId]);
+    }, [room.camOn, room.micOn, localStream, socket, id, currentUserId, isConnected]);
 
-    // ── Unirse a la llamada WebRTC ────────────────────────────────────────
+    // ── Unirse a la llamada WebRTC cuando socket Y stream estén listos ────
     useEffect(() => {
-        if (socket && localStream) {
+        if (socket && localStream && isConnected) {
             joinCall();
         }
-    }, [socket, localStream, joinCall]);
+    }, [socket, localStream, isConnected, joinCall]);
 
     // ── Manejo del chat vía socket ────────────────────────────────────────
+    // isConnected garantiza que este efecto se re-ejecuta cuando el socket
+    // está realmente conectado (no solo cuando la referencia existe)
     useEffect(() => {
-        if (!socket) return;
+        if (!socket || !isConnected) return;
 
+        console.log('💬 [RoomPage] Registrando listener de chat (socket conectado)');
         const handler = (msg: Message) =>
             setChatMessages(prev => [...prev, msg]);
+
         socket.on('receive_message', handler);
 
         return () => {
             socket.off('receive_message', handler);
         };
-    }, [socket]);
+    }, [socket, isConnected]); // ← isConnected como dependencia
 
     // ── Handlers memorizados ──────────────────────────────────────────────
     const handleSendMessage = useCallback(() => {
         const text = room.message.trim();
-        if (!text || !socket) return;
+        if (!text || !socket || !isConnected) return;
         socket.emit('send_message', { roomId: id, message: text });
         room.setMessage('');
-    }, [room, socket, id, room.setMessage]);
+    }, [room, socket, id, isConnected]);
 
     const handleLeaveRoom = useCallback(() => {
         leaveCall();
