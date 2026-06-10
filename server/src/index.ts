@@ -36,9 +36,12 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
 
   const url = req.url ?? '/';
 
+  // 💡 Interceptor de Socket.IO (No tocar, permite el paso de WSS)
   if (url.startsWith('/socket.io')) {
     return;
   }
+
+  console.log(`📡 [HTTP Request] ${req.method} -> ${url}`);
 
   if (req.method === 'GET' && url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -52,14 +55,20 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 
   if (url.startsWith('/users')) {
-    if (!await verifyToken(req, res)) return;
+    if (!await verifyToken(req, res)) {
+      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta: ${url}`);
+      return;
+    }
     await handleUsers(req, res, url.slice('/users'.length) || '');
     return;
   }
 
   const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/);
   if (roomsMatch) {
-    if (!await verifyToken(req, res)) return;
+    if (!await verifyToken(req, res)) {
+      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta de salas: ${url}`);
+      return;
+    }
     await handleRooms(req, res, roomsMatch[1] || undefined);
     return;
   }
@@ -69,11 +78,13 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return;
   }
 
+  console.warn(`⚠️ [HTTP 404] No se encontró la ruta para: ${url}`);
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
 // ── Socket.IO Server ────────────────────────────────────────────────
+console.log('⚡ [Socket.IO] Inicializando servidor en modo WebSockets puros...');
 const io = new Server(httpServer, {
   cors: {
     origin: CLIENT_ORIGIN,
@@ -83,34 +94,49 @@ const io = new Server(httpServer, {
   transports: ['websocket']
 });
 
-// Middleware de autenticación
+// Middleware de autenticación de Sockets
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
-  if (!token) return next(new Error('Token no proporcionado'));
+  console.log(`🔒 [Socket Auth] Verificando handshake inicial para el socket: ${socket.id}`);
+  
+  if (!token) {
+    console.error(`❌ [Socket Auth] Conexión denegada: No se proporcionó Token en el socket ${socket.id}`);
+    return next(new Error('Token no proporcionado'));
+  }
 
   try {
     const decoded = await auth.verifyIdToken(token);
     socket.data.userId = decoded.uid;
     socket.data.email = decoded.email ?? '';
+    console.log(`✅ [Socket Auth] Token verificado con éxito. UID Firebase: ${decoded.uid} (${decoded.email ?? 'Sin Email'})`);
     next();
-  } catch {
+  } catch (err: any) {
+    console.error(`❌ [Socket Auth] Token inválido o expirado en socket ${socket.id}. Error:`, err.message);
     next(new Error('Token inválido'));
   }
 });
 
 // ── Eventos de salas y chat ─────────────────────────────────────────
 io.on('connection', (socket) => {
-  console.log(`Socket conectado: ${socket.id}`);
+  console.log(`🟢 [Socket Event] Cliente conectado al servidor. Socket ID: ${socket.id}, UID: ${socket.data.userId}`);
 
   // ─── Unirse a sala ────────────────────────────────────────────────
   socket.on('join-room', ({ roomId, userName }: { roomId: string; userName: string }) => {
     const userId = socket.data.userId;
-    if (!userId) return;
+    if (!userId) {
+      console.warn(`⚠️ [Room] Intento de join-room sin userId válido en socket: ${socket.id}`);
+      return;
+    }
 
+    console.log(`🚪 [Room] Usuario '${userName}' (${userId}) solicita unirse a la sala de chat: ${roomId}`);
+    
     socket.join(roomId);
-    socket.join(userId); // sala personal para señalización WebRTC
+    socket.join(userId); // Sala personal vital para señalización WebRTC individual
+    console.log(`🔗 [Room] Socket ${socket.id} mapeado a sala '${roomId}' y a su canal privado '${userId}'`);
 
-    if (!rooms.has(roomId)) rooms.set(roomId, new Map());
+    if (!rooms.has(roomId)) {
+      rooms.set(roomId, new Map());
+    }
 
     rooms.get(roomId)!.set(userId, {
       id: userId,
@@ -120,8 +146,9 @@ io.on('connection', (socket) => {
       micOn: false,
     });
 
-    io.to(roomId).emit('room-participants', Array.from(rooms.get(roomId)!.values()));
-    console.log(`${userName} (${userId}) entró a la sala ${roomId}`);
+    const participantList = Array.from(rooms.get(roomId)!.values());
+    io.to(roomId).emit('room-participants', participantList);
+    console.log(`👥 [Room] Lista actualizada de participantes enviada a sala [${roomId}]. Total: ${participantList.length}`);
   });
 
   // ─── Actualizar estado multimedia ─────────────────────────────────
@@ -134,6 +161,7 @@ io.on('connection', (socket) => {
     if (participant) {
       participant.camOn = camOn;
       participant.micOn = micOn;
+      console.log(`📸 [Media] Estado actualizado para [${participant.name}]: Cam: ${camOn}, Mic: ${micOn}`);
       io.to(roomId).emit('room-participants', Array.from(room.values()));
     }
   });
@@ -143,6 +171,7 @@ io.on('connection', (socket) => {
     const userId = socket.data.userId;
     if (!userId) return;
 
+    console.log(`🚪 [Room] El usuario (${userId}) está abandonando la sala: ${roomId}`);
     socket.leave(roomId);
     socket.leave(userId);
 
@@ -150,6 +179,7 @@ io.on('connection', (socket) => {
     if (room) {
       room.delete(userId);
       if (room.size === 0) {
+        console.log(`🗑️ [Room] Sala [${roomId}] vacía. Eliminando mapa de memoria.`);
         rooms.delete(roomId);
       } else {
         io.to(roomId).emit('room-participants', Array.from(room.values()));
@@ -166,6 +196,8 @@ io.on('connection', (socket) => {
     const participant = room?.get(userId);
     const author = participant?.name ?? userId ?? 'Anónimo';
 
+    console.log(`💬 [Chat] Mensaje recibido de [${author}] en sala [${roomId}]: "${message}"`);
+
     io.to(roomId).emit('receive_message', {
       id: Date.now(),
       author,
@@ -173,21 +205,23 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ─── Desconexión ──────────────────────────────────────────────────
+  // ─── Desconexión Física del Socket ──────────────────────────────────
   socket.on('disconnect', () => {
     const userId = socket.data.userId;
+    console.log(`🔴 [Socket Event] Socket desconectado físicamente: ${socket.id}, userId vinculado: ${userId}`);
     if (!userId) return;
     console.log(`Socket desconectado: ${socket.id}, userId: ${userId}`);
 
     rooms.forEach((participants, roomId) => {
       if (participants.has(userId)) {
-        // Eliminamos al participante del mapa de la sala
+        console.log(`🧹 [CleanUp] Removiendo rastro del usuario [${userId}] de la sala [${roomId}] por desconexión.`);
         participants.delete(userId);
 
-        // 2. Forzamos el aviso de WebRTC desde aquí, ya que el estado es 100% certero
+        // Forzar el aviso de WebRTC desde aquí
         io.to(roomId).emit('user-left-call', { userId });
 
         if (participants.size === 0) {
+          console.log(`🗑️ [CleanUp] Sala [${roomId}] vacía tras desconexión abrupta. Eliminando mapa.`);
           rooms.delete(roomId);
         } else {
           // 3. Notificamos la lista actualizada de participantes
@@ -198,9 +232,11 @@ io.on('connection', (socket) => {
   });
 });
 
-// ── Registrar manejadores WebRTC (ya incluye emisión de user-left-call) ──
+// ── Registrar manejadores WebRTC ────────────────────────────────────
+console.log('📹 [WebRTC] Vinculando manejadores externos de señalización...');
 registerWebRTCHandlers(io);
 
 httpServer.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
+  console.log(`🚀 [Server] Backend arriba y escuchando solicitudes en el puerto: ${PORT}`);
+  console.log(`🔗 [Server] Origen permitido (CORS Cliente): ${CLIENT_ORIGIN}`);
 });
