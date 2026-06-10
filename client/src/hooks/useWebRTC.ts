@@ -30,7 +30,6 @@ export function useWebRTC(
 ) {
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([]);
-  const [isConnected, setIsConnected] = useState(socket?.connected ?? false);
 
   const roomIdRef = useRef(roomId);
   const socketRef = useRef(socket);
@@ -39,23 +38,6 @@ export function useWebRTC(
     roomIdRef.current = roomId;
     socketRef.current = socket;
   });
-
-  // ── Seguimiento del estado de conexión del socket ─────────────────
-  useEffect(() => {
-    if (!socket) {
-      setIsConnected(false);
-      return;
-    }
-    setIsConnected(socket.connected);
-    const onConnect = () => setIsConnected(true);
-    const onDisconnect = () => setIsConnected(false);
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    return () => {
-      socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
-    };
-  }, [socket]);
 
   // ── Creación / recuperación de PeerConnection ─────────────────────
   const createPeerConnection = useCallback(
@@ -188,12 +170,9 @@ export function useWebRTC(
 
   // ── Suscripción a eventos del socket (ÚNICO useEffect de listeners) ─
   useEffect(() => {
-    if (!socket || !isConnected) {
-      console.log('⏳ [useWebRTC] Esperando socket conectado para activar listeners...');
-      return;
-    }
+    if (!socket) return;
 
-    console.log('🔌 [useWebRTC] Socket LISTO. Registrando listeners de WebRTC.');
+    console.log('🔌 [useWebRTC] Registrando listeners de WebRTC.');
 
     socket.on('webrtc-offer', handleOffer);
     socket.on('webrtc-answer', handleAnswer);
@@ -234,7 +213,7 @@ export function useWebRTC(
       socket.off('existing-call-participants');
       socket.off('user-left-call');
     };
-  }, [socket, isConnected, currentUserId, handleOffer, handleAnswer, handleIceCandidate, callUser, createPeerConnection]);
+  }, [socket, currentUserId, handleOffer, handleAnswer, handleIceCandidate, callUser, createPeerConnection]);
 
   // ── Limpieza total al desmontar ───────────────────────────────────
   useEffect(() => {
