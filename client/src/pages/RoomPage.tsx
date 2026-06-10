@@ -39,11 +39,6 @@ function VideoGrid({
     totalPersonas,
 }: VideoGridProps) {
     // Render helpers
-    const getPeerStream = (peerId: string, peerCamOn: boolean) => {
-        if (!peerCamOn) return null;
-        return remoteStreams.find(s => s.userId === peerId)?.stream ?? null;
-    };
-
     const renderLocalCard = (className?: string) => {
         const streamParaMiCard = camOn ? localStream : null;
 
@@ -63,7 +58,8 @@ function VideoGrid({
             key={peer.id}
             name={peer.name}
             speaking={peer.speaking}
-            stream={getPeerStream(peer.id, peer.camOn)}
+            stream={remoteStreams.find(s => s.userId === peer.id)?.stream ?? null}
+            camOn={peer.camOn}
             isLocal={false}
         />
     );
