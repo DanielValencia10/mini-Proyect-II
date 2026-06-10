@@ -12,7 +12,9 @@ import {
   User,
 } from 'firebase/auth'
 import { firebaseAuth } from '../lib/firebase'
-import { getUser, createUser, updateUser } from '../services/userService'
+import { getUser, createUser, updateUser, deleteUser } from '../services/userService'
+
+import { INSTITUTIONAL_DOMAIN, isInstitutionalEmail } from '../constants/auth'
 
 interface RegisterData {
   nombres: string
@@ -34,6 +36,7 @@ interface AuthState {
   completeProfile: (username: string) => Promise<{ error?: string }>
   updateProfile: (data: { nombres?: string; apellidos?: string; username?: string; avatar?: string; email?: string }) => Promise<{ error?: string }>
   logout: () => Promise<void>
+  deleteUserAccount: () => Promise<{ error?: string }>
 }
 
 let skipAuthCheck = false
@@ -43,6 +46,11 @@ const useAuthStore = create<AuthState>((set, get) => {
   onAuthStateChanged(firebaseAuth, async (user) => {
     if (skipAuthCheck) return
     if (user) {
+      if (!isInstitutionalEmail(user.email ?? '')) {
+        await signOut(firebaseAuth)
+        set({ userLogged: null, needsUsername: false, loading: false })
+        return
+      }
       const token = await user.getIdToken()
       const result = await getUser(user.uid, token)
       const hasUsername = result.success && result.data?.username
@@ -69,7 +77,11 @@ const useAuthStore = create<AuthState>((set, get) => {
 
     loginWithGoogle: async () => {
       try {
-        await signInWithPopup(firebaseAuth, new GoogleAuthProvider())
+        const result = await signInWithPopup(firebaseAuth, new GoogleAuthProvider())
+        if (!isInstitutionalEmail(result.user.email ?? '')) {
+          await signOut(firebaseAuth)
+          return { error: `Solo se permiten correos @${INSTITUTIONAL_DOMAIN}` }
+        }
         return {}
       } catch (err: unknown) {
         const code = (err as { code?: string }).code
@@ -93,6 +105,9 @@ const useAuthStore = create<AuthState>((set, get) => {
     },
 
     registerWithEmail: async ({ nombres, apellidos, username, email, password }) => {
+      if (!isInstitutionalEmail(email)) {
+        return { error: `Solo se permiten correos @${INSTITUTIONAL_DOMAIN}` }
+      }
       try {
         skipAuthCheck = true
         const credential = await createUserWithEmailAndPassword(firebaseAuth, email, password)
@@ -124,6 +139,7 @@ const useAuthStore = create<AuthState>((set, get) => {
       const user = get().userLogged
       if (!user) return { error: 'No hay sesión activa' }
       try {
+        await user.getIdToken(true)
         const [nombres, ...rest] = (user.displayName ?? '').split(' ')
         const result = await createUser({
           uid: user.uid,
@@ -144,6 +160,27 @@ const useAuthStore = create<AuthState>((set, get) => {
     logout: async () => {
       await signOut(firebaseAuth)
       set({ userLogged: null, needsUsername: false })
+    },
+
+    deleteUserAccount: async () => {
+      const user = get().userLogged
+      if (!user) return { error: 'No hay sesión activa' }
+      try {
+        const result = await deleteUser(user.uid)
+        if (!result.success) {
+          return { error: 'No se pudo eliminar la cuenta de la base de datos. Intente de nuevo' }
+        }
+        await user.delete()
+        set({ userLogged: null, needsUsername: false })
+        return {}
+      } catch (err: unknown) {
+        console.error(err)
+        const code = (err as { code?: string }).code
+        if (code === 'auth/requires-recent-login') {
+          return { error: 'Por seguridad, esta acción requiere que inicies sesión de nuevo antes de poder eliminar tu cuenta.' }
+        }
+        return { error: 'No se pudo eliminar el usuario de Firebase Auth. Intente de nuevo' }
+      }
     },
 
     updateProfile: async (data) => {
