@@ -5,10 +5,11 @@ interface Props {
     speaking: boolean;
     stream?: MediaStream | null;
     isLocal?: boolean;
+    camOn?: boolean;
     className?: string;
 }
 
-export function ParticipantCard({ name, speaking, stream, isLocal = false, className = '' }: Props) {
+export function ParticipantCard({ name, speaking, stream, isLocal = false, camOn, className = '' }: Props) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isVideoActive, setIsVideoActive] = useState(false);
 
@@ -36,12 +37,14 @@ export function ParticipantCard({ name, speaking, stream, isLocal = false, class
         const videoTrack = stream.getVideoTracks()[0];
 
         const updateVideoActive = () => {
-            // Si es remoto, pasa por la validación estándar de estado de pista.
+            if (camOn !== undefined) {
+                setIsVideoActive(camOn);
+                return;
+            }
             if (isLocal && videoTrack && videoTrack.enabled) {
                 setIsVideoActive(true);
                 return;
             }
-
             setIsVideoActive(
                 !!videoTrack &&
                 videoTrack.enabled &&
@@ -74,7 +77,7 @@ export function ParticipantCard({ name, speaking, stream, isLocal = false, class
             }
             videoEl.srcObject = null;
         };
-    }, [stream, isLocal]);
+    }, [stream, isLocal, camOn]);
 
     return (
 
