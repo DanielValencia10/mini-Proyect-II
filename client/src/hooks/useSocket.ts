@@ -41,10 +41,23 @@ export function useSocket(roomId: string) {
         }
 
         if (!socketRef.current) {
-            const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+            socketRef.current = io(backendUrl, {
                 auth: { token },
+                transports: ['websocket'],
+                upgrade: false,
+                withCredentials: true
             });
-            socketRef.current = newSocket;
+
+
+            socketRef.current.on('connect', () => {
+                console.log('[Socket] ¡Conectado exitosamente a Render!');
+            });
+
+            socketRef.current.on('connect_error', (err) => {
+                console.error(' [Socket] Error de conexión:', err.message);
+            });
         }
 
     }, [token, uid]);
