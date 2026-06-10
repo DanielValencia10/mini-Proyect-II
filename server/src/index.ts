@@ -36,6 +36,10 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
 
   const url = req.url ?? '/';
 
+  if (url.startsWith('/socket.io')) {
+    return;
+  }
+
   if (req.method === 'GET' && url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
@@ -74,7 +78,9 @@ const io = new Server(httpServer, {
   cors: {
     origin: CLIENT_ORIGIN,
     methods: ['GET', 'POST'],
+    credentials: true
   },
+  transports: ['websocket']
 });
 
 // Middleware de autenticación
