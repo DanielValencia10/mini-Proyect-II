@@ -14,14 +14,19 @@ interface RTCIceCandidateInit {
 
 export function registerWebRTCHandlers(io: Server) {
     io.on('connection', (socket: Socket) => {
+        console.log(`🔌 [registerWebRTCHandlers] Sockets vinculados para señalización. ID: ${socket.id}`);
 
-        // Cuando un usuario activa su cámara/micrófono
+        // ── 1. Cuando un usuario activa su cámara/micrófono ─────────────────────────────
         socket.on('join-call', ({ roomId }: { roomId: string }) => {
             const userId = socket.data.userId;
+            console.log(`📞 [WebRTC Backend] Usuario [${userId}] solicitó entrar a la llamada de la sala [${roomId}].`);
+
             // Unirse a la "sala de llamada" anidada
             socket.join(`call:${roomId}`);
+            console.log(`➡️ [WebRTC Backend] Socket ${socket.id} unido exitosamente a la sala 'call:${roomId}'`);
 
             // Notificar a los demás en la sala de chat que alguien se unió a la llamada
+            console.log(`📤 [WebRTC Backend] Notificando 'user-joined-call' a la sala [${roomId}] omitiendo al emisor.`);
             socket.to(roomId).emit('user-joined-call', {
                 userId,
             });
@@ -36,68 +41,79 @@ export function registerWebRTCHandlers(io: Server) {
                         existingUsers.push(s.data.userId);
                     }
                 }
+                console.log(`👥 [WebRTC Backend] Enviando lista de participantes existentes a [${userId}]. Encontrados:`, existingUsers);
                 socket.emit('existing-call-participants', { userIds: existingUsers });
+            } else {
+                console.log(`ℹ️ [WebRTC Backend] El usuario [${userId}] es el primero en unirse a la llamada.`);
             }
         });
 
+        // ── 2. Abandonar llamada voluntariamente ──────────────────────────────────────────
         socket.on('leave-call', ({ roomId }: { roomId: string }) => {
+            const userId = socket.data.userId;
+            console.log(`🚪 [WebRTC Backend] El usuario [${userId}] abandonó voluntariamente la llamada de la sala [${roomId}].`);
+
             socket.leave(`call:${roomId}`);
             socket.to(roomId).emit('user-left-call', {
-                userId: socket.data.userId,
+                userId,
             });
         });
 
-        // Señalización WebRTC
+        // ── 3. Señalización WebRTC - OFERTA ───────────────────────────────────────────────
         socket.on('webrtc-offer', (data: {
             roomId: string;
             offer: RTCSessionDescriptionInit;
             to: string; // Recibe el userId del destinatario
         }) => {
-            console.log(`Reenviando Oferta de: ${socket.data.userId} hacia: ${data.to}`);
-            // Enviamos a la sala individual del destinatario objetivo
+            console.log(`🔥 [Señalización] Recibida OFERTA de: [${socket.data.userId}] ➡️ Reenviando hacia: [${data.to}]`);
+
+            // Enviamos a la sala individual del destinatario objetivo (Firebase UID)
             io.to(data.to).emit('webrtc-offer', {
                 offer: data.offer,
-                from: socket.data.userId, // Modificado: Mandamos el UID de Firebase 
+                from: socket.data.userId,
             });
         });
 
-        // Señalización WebRTC - RESPUESTA
+        // ── 4. Señalización WebRTC - RESPUESTA ────────────────────────────────────────────
         socket.on('webrtc-answer', (data: {
             roomId: string;
             answer: RTCSessionDescriptionInit;
             to: string; // Recibe el userId del destinatario
         }) => {
-            console.log(`Reenviando Respuesta de: ${socket.data.userId} hacia: ${data.to}`);
+            console.log(`🤝 [Señalización] Recibida RESPUESTA (Answer) de: [${socket.data.userId}] ➡️ Reenviando hacia: [${data.to}]`);
+
             io.to(data.to).emit('webrtc-answer', {
                 answer: data.answer,
-                from: socket.data.userId, // Modificado: Mandamos el UID de Firebase 
+                from: socket.data.userId,
             });
         });
 
-        // Señalización WebRTC - CANDIDATOS ICE
+        // ── 5. Señalización WebRTC - CANDIDATOS ICE ───────────────────────────────────────
         socket.on('webrtc-ice-candidate', (data: {
             roomId: string;
             candidate: RTCIceCandidateInit;
             to?: string; // Recibe el userId del destinatario
         }) => {
             if (data.to) {
+                console.log(`❄️ [Señalización] Recibido ICE Candidate de: [${socket.data.userId}] ➡️ Redirigiendo a target específico: [${data.to}]`);
                 // Enviar solo al destinatario específico (Sala individual de Firebase UID)
                 io.to(data.to).emit('webrtc-ice-candidate', {
                     candidate: data.candidate,
-                    from: socket.data.userId, // Modificado: Mandamos el UID de Firebase
+                    from: socket.data.userId,
                 });
             } else {
+                console.log(`❄️ [Señalización] Recibido ICE Candidate global de: [${socket.data.userId}] ➡️ Ejecutando broadcast a la sala: call:${data.roomId}`);
                 // Broadcast a toda la sala de videollamada, excepto al emisor
                 socket.to(`call:${data.roomId}`).emit('webrtc-ice-candidate', {
                     candidate: data.candidate,
-                    from: socket.data.userId, // Modificado: Mandamos el UID de Firebase
+                    from: socket.data.userId,
                 });
             }
         });
 
-        // Limpieza al desconectar
+        // ── 6. Limpieza al desconectar ────────────────────────────────────────────────────
         socket.on('disconnect', () => {
-           
+            console.log(`🔌 [WebRTC Backend] Socket desconectado del handler de streaming. ID: ${socket.id}, UID: ${socket.data.userId}`);
         });
     });
 }

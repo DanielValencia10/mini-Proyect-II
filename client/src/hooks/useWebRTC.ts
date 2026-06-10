@@ -22,6 +22,7 @@ export function useWebRTC(
   // Refs para limpieza final al desmontar
   const roomIdRef = useRef(roomId);
   const socketRef = useRef(socket);
+  
   useEffect(() => {
     roomIdRef.current = roomId;
     socketRef.current = socket;
@@ -33,11 +34,11 @@ export function useWebRTC(
       const existing = peerConnections.current.get(remoteUserId);
       if (existing) return existing;
 
-      console.log(`Creando RTCPeerConnection para: ${remoteUserId}`);
+      console.log(`📡 [WebRTC] Creando RTCPeerConnection para: ${remoteUserId}`);
       const pc = new RTCPeerConnection(ICE_SERVERS);
       peerConnections.current.set(remoteUserId, pc);
 
-      //  Buscamos e inyectamos las pistas de forma manual y ordenada
+      // Buscamos e inyectamos las pistas de forma manual y ordenada
       if (localStream) {
         const audioTrack = localStream.getAudioTracks()[0];
         const videoTrack = localStream.getVideoTracks()[0];
@@ -74,7 +75,7 @@ export function useWebRTC(
       // Enviar candidatos ICE al otro participante
       pc.onicecandidate = (event) => {
         if (event.candidate && socket) {
-          console.log(`📡 [WebRTC] Enviando ICE Candidate hacia: ${remoteUserId}`);
+          console.log(`📶 [WebRTC] Enviando ICE Candidate hacia: ${remoteUserId}`);
           socket.emit('webrtc-ice-candidate', {
             roomId,
             candidate: event.candidate,
@@ -91,13 +92,14 @@ export function useWebRTC(
   // ── Iniciar llamada (oferta) ──────────────────────────────────────
   const callUser = useCallback(
     async (remoteUserId: string) => {
+      console.log(`📞 [WebRTC] Iniciando oferta de llamada hacia: ${remoteUserId}`);
       const pc = createPeerConnection(remoteUserId);
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket?.emit('webrtc-offer', { roomId, offer, to: remoteUserId });
       } catch (err) {
-        console.error('Error creando oferta:', err);
+        console.error('❌ [WebRTC] Error creando oferta:', err);
       }
     },
     [createPeerConnection, roomId, socket]
@@ -106,6 +108,7 @@ export function useWebRTC(
   // ── Manejadores de señalización ───────────────────────────────────
   const handleOffer = useCallback(
     async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
+      console.log(`📩 [WebRTC] Oferta recibida desde: ${data.from}`);
       const pc = createPeerConnection(data.from);
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -113,7 +116,7 @@ export function useWebRTC(
         await pc.setLocalDescription(answer);
         socket?.emit('webrtc-answer', { roomId, answer, to: data.from });
       } catch (err) {
-        console.error('Error respondiendo a la oferta:', err);
+        console.error('❌ [WebRTC] Error respondiendo a la oferta:', err);
       }
     },
     [createPeerConnection, roomId, socket]
@@ -121,15 +124,21 @@ export function useWebRTC(
 
   const handleAnswer = useCallback(
     async (data: { from: string; answer: RTCSessionDescriptionInit }) => {
+      console.log(`📨 [WebRTC] Respuesta (Answer) recibida desde: ${data.from}`);
       const pc = peerConnections.current.get(data.from);
-      if (!pc) return;
+      if (!pc) {
+        console.warn(`⚠️ [WebRTC] No se encontró PeerConnection para procesar Answer de: ${data.from}`);
+        return;
+      }
       try {
         if (pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-          console.log(`Handshake completo con: ${data.from}`);
+          console.log(`🤝 [WebRTC] Handshake SDP completo con: ${data.from}`);
+        } else {
+          console.log(`ℹ️ [WebRTC] Ignorando Answer de ${data.from} debido al estado: ${pc.signalingState}`);
         }
       } catch (err) {
-        console.error('Error aplicando respuesta remota:', err);
+        console.error('❌ [WebRTC] Error aplicando respuesta remota:', err);
       }
     },
     []
@@ -141,8 +150,9 @@ export function useWebRTC(
       if (!pc) return;
       try {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        console.log(`❄️ [WebRTC] Candidato ICE agregado con éxito desde: ${data.from}`);
       } catch (err) {
-        console.error('Error agregando candidato ICE:', err);
+        console.error('❌ [WebRTC] Error agregando candidato ICE:', err);
       }
     },
     []
@@ -150,28 +160,35 @@ export function useWebRTC(
 
   // ── Suscripción a eventos del socket ─────────────────────────────
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      console.warn("⚠️ [useWebRTC] useEffect de suscripción omitido: El socket está en null.");
+      return;
+    }
+
+    console.log("🔌 [useWebRTC] Configurando listeners de Socket.IO para WebRTC.");
 
     socket.on('webrtc-offer', handleOffer);
     socket.on('webrtc-answer', handleAnswer);
     socket.on('webrtc-ice-candidate', handleIceCandidate);
 
     socket.on('user-joined-call', (data: { userId: string }) => {
+      console.log(`👤 [Socket] El usuario ${data.userId} se unió a la llamada.`);
       if (data.userId !== currentUserId) {
-        // El nuevo iniciará la oferta, solo preparamos el peer
         createPeerConnection(data.userId);
       }
     });
 
     socket.on('existing-call-participants', (data: { userIds: string[] }) => {
+      console.log("👥 [Socket] Participantes existentes recibidos del backend:", data.userIds);
       data.userIds.forEach((userId) => {
         if (userId !== currentUserId) {
-          callUser(userId); // El nuevo crea la oferta hacia cada existente
+          callUser(userId);
         }
       });
     });
 
     socket.on('user-left-call', (data: { userId: string }) => {
+      console.log(`🚪 [Socket] El usuario ${data.userId} abandonó la llamada.`);
       const pc = peerConnections.current.get(data.userId);
       if (pc) {
         pc.close();
@@ -181,6 +198,7 @@ export function useWebRTC(
     });
 
     return () => {
+      console.log("🗑️ [useWebRTC] Removiendo listeners de Socket.IO.");
       socket.off('webrtc-offer', handleOffer);
       socket.off('webrtc-answer', handleAnswer);
       socket.off('webrtc-ice-candidate', handleIceCandidate);
@@ -192,21 +210,25 @@ export function useWebRTC(
 
   // ── Sincronización de pistas locales con los peers ────────────────
   useEffect(() => {
-    if (!localStream) return;
+    if (!localStream) {
+      console.log("📹 [useWebRTC] Esperando por localStream para sincronizar pistas...");
+      return;
+    }
 
+    console.log("📹 [useWebRTC] Sincronizando tracks locales con todas las conexiones Peer...");
     const audioTrack = localStream.getAudioTracks()[0];
     const videoTrack = localStream.getVideoTracks()[0];
 
-    peerConnections.current.forEach((pc) => {
+    peerConnections.current.forEach((pc, id) => {
       pc.getSenders().forEach((sender) => {
         if (sender.track?.kind === 'audio' && audioTrack) {
           sender.replaceTrack(audioTrack).catch((err) =>
-            console.error('Error reemplazando track de audio:', err)
+            console.error(`❌ Error reemplazando track de audio para ${id}:`, err)
           );
         }
         if (sender.track?.kind === 'video' && videoTrack) {
           sender.replaceTrack(videoTrack).catch((err) =>
-            console.error('Error reemplazando track de video:', err)
+            console.error(`❌ Error reemplazando track de video para ${id}:`, err)
           );
         }
       });
@@ -215,35 +237,48 @@ export function useWebRTC(
 
   // ── Limpieza total al desmontar el hook ───────────────────────────
   useEffect(() => {
-    const currentSocket = socketRef.current;
-    const currentRoomId = roomIdRef.current;
-    const currentConnections = peerConnections.current;
+    console.log("🚀 [useWebRTC] Hook montado en la vista.");
 
     return () => {
-      console.log("Limpiando y cerrando todas las conexiones...");
+      const currentSocket = socketRef.current;
+      const currentRoomId = roomIdRef.current;
+      const currentConnections = peerConnections.current;
 
-      // Notificar la salida usando la copia local del socket
+      console.log("🛑 [useWebRTC] Intentando ejecutar desmontaje final...");
+      
+      // 🔥 VALIDACIÓN: Si no hay sockets activos ni conexiones, ignoramos el desmonte fantasma de React 18
+      if (currentConnections.size === 0 && (!currentSocket || !currentSocket.connected)) {
+        console.log("⏭️ [useWebRTC] Desmontaje ignorado (Render doble o hook vacío inicial).");
+        return;
+      }
+
+      console.log("🧹 [useWebRTC] Limpiando y cerrando todas las conexiones reales...");
+
       if (currentSocket && currentRoomId) {
+        console.log(`📤 Emitiendo 'leave-call' para la sala: ${currentRoomId}`);
         currentSocket.emit('leave-call', { roomId: currentRoomId });
       }
 
-      // Cerrar cada RTCPeerConnection usando la copia local del mapa
-      currentConnections.forEach((pc) => {
+      currentConnections.forEach((pc, id) => {
+        console.log(`🔌 Cerrando PeerConnection de: ${id}`);
         pc.close();
       });
 
       // Limpiar el mapa real y el estado de la UI
       currentConnections.clear();
       setRemoteStreams([]);
+      console.log("✨ [useWebRTC] Hook completamente limpio.");
     };
   }, []);
 
   // ── Acciones públicas ─────────────────────────────────────────────
   const joinCall = useCallback(() => {
+    console.log(`📣 [Acción] Solicitando unirse a llamada en sala: ${roomId}`);
     socket?.emit('join-call', { roomId });
   }, [socket, roomId]);
 
   const leaveCall = useCallback(() => {
+    console.log("📣 [Acción] Abandonando llamada manualmente por interacción de UI.");
     socket?.emit('leave-call', { roomId });
     peerConnections.current.forEach((pc) => pc.close());
     peerConnections.current.clear();
