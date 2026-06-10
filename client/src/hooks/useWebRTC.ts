@@ -22,7 +22,7 @@ export function useWebRTC(
   // Refs para limpieza final al desmontar
   const roomIdRef = useRef(roomId);
   const socketRef = useRef(socket);
-  
+
   useEffect(() => {
     roomIdRef.current = roomId;
     socketRef.current = socket;
@@ -209,31 +209,71 @@ export function useWebRTC(
   }, [socket, currentUserId, handleOffer, handleAnswer, handleIceCandidate, callUser, createPeerConnection]);
 
   // ── Sincronización de pistas locales con los peers ────────────────
+  // ── Modifica ESTE useEffect en tu useWebRTC.ts ─────────────────────────────
   useEffect(() => {
-    if (!localStream) {
-      console.log("📹 [useWebRTC] Esperando por localStream para sincronizar pistas...");
+    // 🔥 CORRECCIÓN: Si el socket no existe, o existe pero aún no se ha conectado físicamente, esperamos.
+    if (!socket || !socket.connected) {
+      console.log("⏳ [useWebRTC] Esperando que el socket cambie a estado conectado para activar listeners...");
+
+      // Si el socket existe pero está conectando, escuchamos el evento 'connect' para forzar un re-render
+      if (socket) {
+        const forceUpdate = () => {
+          console.log("⚡ [useWebRTC] Socket conectado tardíamente. Reactivando listeners de WebRTC.");
+          // Esto disparará el efecto de nuevo al cambiar propiedades internas si se desea, 
+          // pero mapear 'socket.connected' en las dependencias suele bastar.
+        };
+        socket.on('connect', forceUpdate);
+        return () => {
+          socket.off('connect', forceUpdate);
+        };
+      }
       return;
     }
 
-    console.log("📹 [useWebRTC] Sincronizando tracks locales con todas las conexiones Peer...");
-    const audioTrack = localStream.getAudioTracks()[0];
-    const videoTrack = localStream.getVideoTracks()[0];
+    console.log("🔌 [useWebRTC] ¡Socket LISTO y CONECTADO! Configurando listeners de Socket.IO para WebRTC.");
 
-    peerConnections.current.forEach((pc, id) => {
-      pc.getSenders().forEach((sender) => {
-        if (sender.track?.kind === 'audio' && audioTrack) {
-          sender.replaceTrack(audioTrack).catch((err) =>
-            console.error(`❌ Error reemplazando track de audio para ${id}:`, err)
-          );
-        }
-        if (sender.track?.kind === 'video' && videoTrack) {
-          sender.replaceTrack(videoTrack).catch((err) =>
-            console.error(`❌ Error reemplazando track de video para ${id}:`, err)
-          );
+    socket.on('webrtc-offer', handleOffer);
+    socket.on('webrtc-answer', handleAnswer);
+    socket.on('webrtc-ice-candidate', handleIceCandidate);
+
+    socket.on('user-joined-call', (data: { userId: string }) => {
+      console.log(`👤 [Socket] El usuario ${data.userId} se unió a la llamada.`);
+      if (data.userId !== currentUserId) {
+        createPeerConnection(data.userId);
+      }
+    });
+
+    socket.on('existing-call-participants', (data: { userIds: string[] }) => {
+      console.log("👥 [Socket] Participantes existentes recibidos del backend:", data.userIds);
+      data.userIds.forEach((userId) => {
+        if (userId !== currentUserId) {
+          callUser(userId);
         }
       });
     });
-  }, [localStream]);
+
+    socket.on('user-left-call', (data: { userId: string }) => {
+      console.log(`🚪 [Socket] El usuario ${data.userId} abandonó la llamada.`);
+      const pc = peerConnections.current.get(data.userId);
+      if (pc) {
+        pc.close();
+        peerConnections.current.delete(data.userId);
+      }
+      setRemoteStreams((prev) => prev.filter((s) => s.userId !== data.userId));
+    });
+
+    return () => {
+      console.log("🗑️ [useWebRTC] Removiendo listeners de Socket.IO.");
+      socket.off('webrtc-offer', handleOffer);
+      socket.off('webrtc-answer', handleAnswer);
+      socket.off('webrtc-ice-candidate', handleIceCandidate);
+      socket.off('user-joined-call');
+      socket.off('existing-call-participants');
+      socket.off('user-left-call');
+    };
+
+    // 🔥 AGREGAMOS socket?.connected AQUÍ ABAJO para que se vuelva a disparar al conectarse
+  }, [socket, socket?.connected, currentUserId, handleOffer, handleAnswer, handleIceCandidate, callUser, createPeerConnection]);
 
   // ── Limpieza total al desmontar el hook ───────────────────────────
   useEffect(() => {
@@ -245,7 +285,7 @@ export function useWebRTC(
       const currentConnections = peerConnections.current;
 
       console.log("🛑 [useWebRTC] Intentando ejecutar desmontaje final...");
-      
+
       // 🔥 VALIDACIÓN: Si no hay sockets activos ni conexiones, ignoramos el desmonte fantasma de React 18
       if (currentConnections.size === 0 && (!currentSocket || !currentSocket.connected)) {
         console.log("⏭️ [useWebRTC] Desmontaje ignorado (Render doble o hook vacío inicial).");
