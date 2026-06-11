@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react'
 import { X } from 'lucide-react'
 
 interface Message { id: number; author: string; text: string }
@@ -11,6 +12,12 @@ interface Props {
 }
 
 export function ChatPanel({ messages, message, onClose, onChange, onSend }: Props) {
+    const messagesEndRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, [messages])
+
     return (
         <aside className="w-72 sm:w-80 shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
@@ -27,6 +34,7 @@ export function ChatPanel({ messages, message, onClose, onChange, onSend }: Prop
                         <p className="text-gray-300 text-sm mt-0.5">{m.text}</p>
                     </div>
                 ))}
+                <div ref={messagesEndRef} />
             </div>
 
             <div className="p-3 border-t border-gray-800 flex gap-2">

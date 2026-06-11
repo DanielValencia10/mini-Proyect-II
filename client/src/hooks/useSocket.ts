@@ -17,6 +17,7 @@ export function useSocket(roomId: string) {
     const uid = userLogged?.uid;
     const displayName = userLogged?.displayName ?? 'Anónimo';
     const [participants, setParticipants] = useState<Participant[]>([]);
+    const [isConnected, setIsConnected] = useState(false);
     const socketRef = useRef(socket);
 
     // Sincroniza el módulo socket con la referencia interna
@@ -41,6 +42,7 @@ export function useSocket(roomId: string) {
                 currentSocket.disconnect();
                 socketRef.current = null;
                 socket = null;
+                setIsConnected(false);
             }
         }
 
@@ -61,15 +63,18 @@ export function useSocket(roomId: string) {
 
             newSocket.on('connect', () => {
                 console.log(`✅ [useSocket] ¡Socket conectado exitosamente! ID único: ${newSocket.id}`);
+                setIsConnected(true);
             });
 
             newSocket.on('connect_error', (err) => {
                 console.error('❌ [useSocket] Error crítico en el canal de comunicación (Handshake):', err.message);
                 console.error('📋 Detalles del error:', err);
+                setIsConnected(false);
             });
 
             newSocket.on('disconnect', (reason) => {
                 console.warn('🔌 [useSocket] El socket se ha desconectado. Razón:', reason);
+                setIsConnected(false);
             });
         } else {
             console.log('ℹ️ [useSocket] Reutilizando instancia de socket existente y activa.');
@@ -128,11 +133,12 @@ export function useSocket(roomId: string) {
             socket = null;
             socketRef.current = null;
             setParticipants([]);
+            setIsConnected(false);
             console.log('✨ [useSocket] Conexión destruida y estados reiniciados.');
         } else {
             console.log('ℹ️ [useSocket] No hay ninguna conexión activa para destruir.');
         }
     }, []);
 
-    return { participants, socket: socketRef.current, disconnectSocket };
+    return { participants, socket: socketRef.current, isConnected, disconnectSocket };
 }

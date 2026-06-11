@@ -115,7 +115,8 @@ function RoomPage() {
     const { userLogged } = useAuthStore();
     const room = useRoom(userLogged?.displayName ?? 'Anónimo');
 
-    const { participants: socketParticipants, socket } = useSocket(id ?? '');
+    // isConnected es un estado real → los useEffect reaccionan cuando el socket se conecta
+    const { participants: socketParticipants, socket, isConnected } = useSocket(id ?? '');
     const currentUserId = userLogged?.uid ?? '';
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -198,16 +199,25 @@ function RoomPage() {
 
     // ── Manejo del chat vía socket ────────────────────────────────────────
     useEffect(() => {
-        if (!socket) return;
+        if (!socket || !isConnected) return;
 
+        console.log('💬 [RoomPage] Registrando listener de chat (socket conectado)');
         const handler = (msg: Message) =>
             setChatMessages(prev => [...prev, msg]);
+
+        const historyHandler = (msgs: Message[]) => {
+            console.log(`📜 [RoomPage] Historial recibido: ${msgs.length} mensajes`);
+            setChatMessages(msgs);
+        };
+
         socket.on('receive_message', handler);
+        socket.on('chat-history', historyHandler);
 
         return () => {
             socket.off('receive_message', handler);
+            socket.off('chat-history', historyHandler);
         };
-    }, [socket]);
+    }, [socket, isConnected]);
 
     // ── Handlers memorizados ──────────────────────────────────────────────
     const handleSendMessage = useCallback(() => {

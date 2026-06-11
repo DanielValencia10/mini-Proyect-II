@@ -3,6 +3,7 @@ import { Plus, Hash, LogOut, User, Video, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../stores/useAuthStore'
 import { getUser } from '../services/userService'
+import { getRoomById } from '../services/roomService'
 import { RoomCard } from '../features/dashboard/RoomCard'
 import { useRooms } from '../hooks/useRooms'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -50,6 +51,7 @@ function Dashboard() {
     const [roomName, setRoomName] = useState('')
     const [joinId, setJoinId] = useState('')
     const [saving, setSaving] = useState(false)
+    const [joinError, setJoinError] = useState('')
 
     const handleCreate = async () => {
         if (!roomName.trim()) return
@@ -60,9 +62,15 @@ function Dashboard() {
         setSaving(false)
     }
 
-    const handleJoin = () => {
+    const handleJoin = async () => {
         if (!joinId.trim()) return
-        window.location.href = `/room/${joinId.trim().toUpperCase()}`
+        setJoinError('')
+        const result = await getRoomById(joinId.trim().toUpperCase())
+        if (result.success && result.data) {
+            navigate(`/room/${joinId.trim().toUpperCase()}`)
+        } else {
+            setJoinError('Sala no encontrada. Verifica el ID e intenta de nuevo.')
+        }
     }
 
     return (
@@ -152,23 +160,28 @@ function Dashboard() {
 
                 {/* Modal unirse */}
                 {showJoin && (
-                    <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex gap-3 items-center">
-                        <input
-                            value={joinId}
-                            onChange={e => setJoinId(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleJoin()}
-                            placeholder="ID de la sala (ej: ABC123)..."
-                            className="flex-1 border border-gray-200 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-teal-400 text-sm font-mono uppercase"
-                        />
-                        <button
-                            onClick={handleJoin}
-                            className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium"
-                        >
-                            Unirse
-                        </button>
-                        <button onClick={() => setShowJoin(false)} className="text-gray-400 hover:text-gray-600 text-sm">
-                            Cancelar
-                        </button>
+                    <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
+                        <div className="flex gap-3 items-center">
+                            <input
+                                value={joinId}
+                                onChange={e => { setJoinId(e.target.value); setJoinError('') }}
+                                onKeyDown={e => e.key === 'Enter' && handleJoin()}
+                                placeholder="ID de la sala (ej: ABC123)..."
+                                className="flex-1 border border-gray-200 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-teal-400 text-sm font-mono uppercase"
+                            />
+                            <button
+                                onClick={handleJoin}
+                                className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium"
+                            >
+                                Unirse
+                            </button>
+                            <button onClick={() => { setShowJoin(false); setJoinError('') }} className="text-gray-400 hover:text-gray-600 text-sm">
+                                Cancelar
+                            </button>
+                        </div>
+                        {joinError && (
+                            <p className="mt-3 text-sm text-red-600 font-medium" role="alert">{joinError}</p>
+                        )}
                     </div>
                 )}
 

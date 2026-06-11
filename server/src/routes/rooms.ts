@@ -50,6 +50,14 @@ export const handleRooms = async (
 
     // PUT /rooms/:id
     if (req.method === 'PUT' && id) {
+        const uid = (req as any).uid
+        const existing = await dao.getRoomById(id)
+        if (!existing.success || !existing.data) {
+            return send(res, 404, { error: 'Sala no encontrada' })
+        }
+        if (existing.data.ownerId !== uid) {
+            return send(res, 403, { error: 'Solo el propietario puede editar esta sala' })
+        }
         const body = await parseBody(req) as Partial<Omit<RoomData, 'id' | 'ownerId'>>
         const result = await dao.updateRoom(id, body)
         return send(res, result.success ? 200 : 500, result)
@@ -57,6 +65,14 @@ export const handleRooms = async (
 
     // DELETE /rooms/:id
     if (req.method === 'DELETE' && id) {
+        const uid = (req as any).uid
+        const existing = await dao.getRoomById(id)
+        if (!existing.success || !existing.data) {
+            return send(res, 404, { error: 'Sala no encontrada' })
+        }
+        if (existing.data.ownerId !== uid) {
+            return send(res, 403, { error: 'Solo el propietario puede eliminar esta sala' })
+        }
         const result = await dao.deleteRoom(id)
         return send(res, result.success ? 200 : 500, result)
     }

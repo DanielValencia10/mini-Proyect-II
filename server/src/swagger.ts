@@ -24,6 +24,9 @@ const spec = {
     { name: 'Health', description: 'Estado del servidor' },
     { name: 'Users',  description: 'Gestión de perfiles de usuario' },
     { name: 'Rooms',  description: 'Salas de estudio colaborativo' },
+    { name: 'WebSocket - Salas', description: 'Eventos Socket.IO para gestión de salas en tiempo real (NO son endpoints HTTP)' },
+    { name: 'WebSocket - Chat', description: 'Eventos Socket.IO para mensajería en tiempo real' },
+    { name: 'WebSocket - Media', description: 'Eventos Socket.IO para estados AV y señalización WebRTC' },
   ],
 
   securityDefinitions: {
@@ -236,6 +239,75 @@ const spec = {
           401: { description: 'No autorizado' },
           500: { description: 'Error al eliminar la sala' },
         },
+      },
+    },
+
+    // ── Documentación de eventos WebSocket (Socket.IO) ──────────────────
+    // Nota: Estos NO son endpoints HTTP reales. Son eventos Socket.IO
+    // documentados aquí como referencia para el equipo.
+
+    '/socket.io/emit/join-room': {
+      get: {
+        tags: ['WebSocket - Salas'],
+        summary: '[EMIT] join-room — Unirse a una sala',
+        description: 'El cliente emite este evento al servidor para unirse a una sala.\n\n**Payload:** `{ roomId: string, userName: string }`\n\n**Respuesta del servidor:**\n- Evento `room-participants` con la lista actualizada de participantes.\n- Evento `chat-history` con los últimos 50 mensajes de la sala.',
+        responses: { 200: { description: 'Evento documentado (no es un endpoint HTTP)' } },
+      },
+    },
+    '/socket.io/emit/leave-room': {
+      get: {
+        tags: ['WebSocket - Salas'],
+        summary: '[EMIT] leave-room — Abandonar una sala',
+        description: 'El cliente emite este evento cuando sale de la sala.\n\n**Payload:** `{ roomId: string }`\n\n**Efecto:** El servidor elimina al usuario de la sala y emite `room-participants` actualizado.',
+        responses: { 200: { description: 'Evento documentado' } },
+      },
+    },
+    '/socket.io/on/room-participants': {
+      get: {
+        tags: ['WebSocket - Salas'],
+        summary: '[ON] room-participants — Lista de participantes actualizada',
+        description: 'El servidor emite este evento cada vez que un usuario entra o sale de la sala.\n\n**Payload:** `Participant[]` donde cada participante tiene: `{ id, name, speaking, camOn, micOn }`.',
+        responses: { 200: { description: 'Evento documentado' } },
+      },
+    },
+    '/socket.io/emit/send_message': {
+      get: {
+        tags: ['WebSocket - Chat'],
+        summary: '[EMIT] send_message — Enviar mensaje de chat',
+        description: 'El cliente envía un mensaje de texto a la sala.\n\n**Payload:** `{ roomId: string, message: string }`\n\n**Efecto:** El servidor guarda el mensaje en Firestore y emite `receive_message` a todos los participantes.',
+        responses: { 200: { description: 'Evento documentado' } },
+      },
+    },
+    '/socket.io/on/receive_message': {
+      get: {
+        tags: ['WebSocket - Chat'],
+        summary: '[ON] receive_message — Recibir mensaje de chat',
+        description: 'El servidor emite este evento a todos los participantes de la sala cuando alguien envía un mensaje.\n\n**Payload:** `{ id: number, author: string, text: string }`.',
+        responses: { 200: { description: 'Evento documentado' } },
+      },
+    },
+    '/socket.io/on/chat-history': {
+      get: {
+        tags: ['WebSocket - Chat'],
+        summary: '[ON] chat-history — Historial de mensajes al unirse',
+        description: 'El servidor emite este evento al usuario que se une a la sala, enviando los últimos 50 mensajes almacenados en Firestore.\n\n**Payload:** `MessageData[]` con `{ author, text, timestamp }`.',
+        responses: { 200: { description: 'Evento documentado' } },
+      },
+    },
+    '/socket.io/emit/update-media-state': {
+      get: {
+        tags: ['WebSocket - Media'],
+        summary: '[EMIT] update-media-state — Cambiar estado de cámara/micrófono',
+        description: 'El cliente notifica al servidor cuando cambia el estado de su cámara o micrófono.\n\n**Payload:** `{ roomId: string, camOn: boolean, micOn: boolean }`.',
+        responses: { 200: { description: 'Evento documentado' } },
+      },
+    },
+    '/socket.io/webrtc/offer-answer-ice': {
+      get: {
+        tags: ['WebSocket - Media'],
+        summary: '[EMIT/ON] Señalización WebRTC (offer, answer, ice-candidate)',
+        description: 'Eventos de señalización WebRTC para establecer conexiones P2P entre los participantes.\n\n**Eventos:**\n- `webrtc-offer`: Envía oferta SDP a un peer.\n- `webrtc-answer`: Envía respuesta SDP.\n- `webrtc-ice-candidate`: Envía candidato ICE.\n- `user-left-call`: Notifica que un usuario abandonó la llamada.',
+        responses: { 200: { description: 'Evento documentado' } },
       },
     },
   },

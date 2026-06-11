@@ -12,7 +12,8 @@ export async function verifyToken(req: IncomingMessage, res: ServerResponse): Pr
   }
 
   try {
-    await auth.verifyIdToken(token)
+    const decoded = await auth.verifyIdToken(token)
+    ;(req as any).uid = decoded.uid
     return true
   } catch {
     res.writeHead(401, { 'Content-Type': 'application/json' })

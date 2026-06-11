@@ -6,6 +6,9 @@ import { handleApiDocs } from './swagger';
 import { verifyToken } from './middleware/auth';
 import { registerWebRTCHandlers } from './socket/webrtcHandler';
 import { auth } from './firebase';
+import MessageDao from './dao/MessageDao';
+
+const messageDao = new MessageDao();
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
 const PORT = process.env.PORT ?? 3000;
@@ -121,7 +124,7 @@ io.on('connection', (socket) => {
   console.log(`🟢 [Socket Event] Cliente conectado al servidor. Socket ID: ${socket.id}, UID: ${socket.data.userId}`);
 
   // ─── Unirse a sala ────────────────────────────────────────────────
-  socket.on('join-room', ({ roomId, userName }: { roomId: string; userName: string }) => {
+  socket.on('join-room', async ({ roomId, userName }: { roomId: string; userName: string }) => {
     const userId = socket.data.userId;
     if (!userId) {
       console.warn(`⚠️ [Room] Intento de join-room sin userId válido en socket: ${socket.id}`);
@@ -149,6 +152,13 @@ io.on('connection', (socket) => {
     const participantList = Array.from(rooms.get(roomId)!.values());
     io.to(roomId).emit('room-participants', participantList);
     console.log(`👥 [Room] Lista actualizada de participantes enviada a sala [${roomId}]. Total: ${participantList.length}`);
+
+    // Cargar historial de chat desde Firestore
+    const history = await messageDao.getMessages(roomId);
+    if (history.success && history.data.length > 0) {
+      console.log(`📜 [Chat] Enviando ${history.data.length} mensajes de historial a ${userName}`);
+      socket.emit('chat-history', history.data);
+    }
   });
 
   // ─── Actualizar estado multimedia ─────────────────────────────────
@@ -190,7 +200,7 @@ io.on('connection', (socket) => {
   });
 
   // ─── Chat ─────────────────────────────────────────────────────────
-  socket.on('send_message', ({ roomId, message }: { roomId: string; message: string }) => {
+  socket.on('send_message', async ({ roomId, message }: { roomId: string; message: string }) => {
     const userId = socket.data.userId;
     const room = rooms.get(roomId);
     const participant = room?.get(userId);
@@ -198,8 +208,14 @@ io.on('connection', (socket) => {
 
     console.log(`💬 [Chat] Mensaje recibido de [${author}] en sala [${roomId}]: "${message}"`);
 
+    const msgData = { author, text: message, timestamp: Date.now() };
+
+    // Guardar en Firestore
+    await messageDao.saveMessage(roomId, msgData);
+
+    // Emitir a todos los participantes
     io.to(roomId).emit('receive_message', {
-      id: Date.now(),
+      id: msgData.timestamp,
       author,
       text: message,
     });
