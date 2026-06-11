@@ -63,6 +63,25 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return;
   }
 
+
+  const messagesMatch = url.match(/^\/rooms\/([^/?]+)\/messages$/)
+  if (messagesMatch) {
+    if (!await verifyToken(req, res)) return
+    try {
+      const { db } = await import('./firebase')
+      const snap = await db.collection('rooms').doc(messagesMatch[1])
+        .collection('messages').orderBy('createdAt', 'asc').limit(100).get()
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true, data: msgs }))
+    } catch {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: false, data: [] }))
+    }
+    return
+  }
+
+
   const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/);
   if (roomsMatch) {
     if (!await verifyToken(req, res)) {
@@ -91,14 +110,15 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket']
+  transports: ['polling', 'websocket']
+
 });
 
 // Middleware de autenticación de Sockets
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   console.log(`🔒 [Socket Auth] Verificando handshake inicial para el socket: ${socket.id}`);
-  
+
   if (!token) {
     console.error(`❌ [Socket Auth] Conexión denegada: No se proporcionó Token en el socket ${socket.id}`);
     return next(new Error('Token no proporcionado'));
@@ -129,7 +149,7 @@ io.on('connection', (socket) => {
     }
 
     console.log(`🚪 [Room] Usuario '${userName}' (${userId}) solicita unirse a la sala de chat: ${roomId}`);
-    
+
     socket.join(roomId);
     socket.join(userId); // Sala personal vital para señalización WebRTC individual
     console.log(`🔗 [Room] Socket ${socket.id} mapeado a sala '${roomId}' y a su canal privado '${userId}'`);
@@ -190,21 +210,30 @@ io.on('connection', (socket) => {
   });
 
   // ─── Chat ─────────────────────────────────────────────────────────
-  socket.on('send_message', ({ roomId, message }: { roomId: string; message: string }) => {
-    const userId = socket.data.userId;
-    const room = rooms.get(roomId);
-    const participant = room?.get(userId);
-    const author = participant?.name ?? userId ?? 'Anónimo';
+  socket.on('send_message', async ({ roomId, message }: { roomId: string; message: string }) => {
+    const userId = socket.data.userId
+    const room = rooms.get(roomId)
+    const participant = room?.get(userId)
+    const author = participant?.name ?? userId ?? 'Anónimo'
 
-    console.log(`💬 [Chat] Mensaje recibido de [${author}] en sala [${roomId}]: "${message}"`);
-
-    io.to(roomId).emit('receive_message', {
+    const newMessage = {
       id: Date.now(),
       author,
       text: message,
-    });
-  });
+      createdAt: new Date(),
+    }
 
+    // Guardar en Firestore
+    try {
+      const { db } = await import('./firebase')
+      await db.collection('rooms').doc(roomId).collection('messages').add(newMessage)
+      console.log(`💾 [Chat] Mensaje guardado en Firestore para sala [${roomId}]`)
+    } catch (err) {
+      console.error('❌ [Chat] Error guardando mensaje en Firestore:', err)
+    }
+
+    io.to(roomId).emit('receive_message', newMessage)
+  })
   // ─── Desconexión Física del Socket ──────────────────────────────────
   socket.on('disconnect', () => {
     const userId = socket.data.userId;
