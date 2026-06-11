@@ -38,13 +38,10 @@ function VideoGrid({
     camOn,
     totalPersonas,
 }: VideoGridProps) {
-    const getPeerStream = (peerId: string, peerCamOn: boolean) => {
-        if (!peerCamOn) return null;
-        return remoteStreams.find(s => s.userId === peerId)?.stream ?? null;
-    };
-
+    // Render helpers
     const renderLocalCard = (className?: string) => {
         const streamParaMiCard = camOn ? localStream : null;
+
         return (
             <ParticipantCard
                 name="Tú"
@@ -61,11 +58,13 @@ function VideoGrid({
             key={peer.id}
             name={peer.name}
             speaking={peer.speaking}
-            stream={getPeerStream(peer.id, peer.camOn)}
+            stream={remoteStreams.find(s => s.userId === peer.id)?.stream ?? null}
+            camOn={peer.camOn}
             isLocal={false}
         />
     );
 
+    // Caso 1: cargando
     if (remotePeers.length === 0 && !localStream) {
         return (
             <p className="text-gray-500 animate-pulse">
@@ -74,6 +73,7 @@ function VideoGrid({
         );
     }
 
+    // Caso 2: only me
     if (remotePeers.length === 0 && localStream) {
         return (
             <div className="w-full h-full max-w-5xl aspect-video">
@@ -82,6 +82,7 @@ function VideoGrid({
         );
     }
 
+    // Caso 3: 1 user → pantalla completa + PiP
     if (remotePeers.length === 1) {
         const peer = remotePeers[0];
         return (
@@ -96,6 +97,7 @@ function VideoGrid({
         );
     }
 
+    // Caso 4: ≥ 2 users → grid
     return (
         <div
             className={`grid ${getGridClass(totalPersonas)} gap-4 w-full h-full max-w-6xl items-center justify-center`}
@@ -113,8 +115,7 @@ function RoomPage() {
     const { userLogged } = useAuthStore();
     const room = useRoom(userLogged?.displayName ?? 'Anónimo');
 
-    // isConnected es un estado real → los useEffect reaccionan cuando el socket se conecta
-    const { participants: socketParticipants, socket, isConnected } = useSocket(id ?? '');
+    const { participants: socketParticipants, socket } = useSocket(id ?? '');
     const currentUserId = userLogged?.uid ?? '';
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -175,7 +176,7 @@ function RoomPage() {
 
     // ── Sincronización de pista de video y notificación al socket ────────
     useEffect(() => {
-        if (!localStream || !isConnected) return;
+        if (!localStream) return;
         localStream.getVideoTracks().forEach(track => (track.enabled = room.camOn));
 
         if (socket && id) {
@@ -186,39 +187,35 @@ function RoomPage() {
                 micOn: room.micOn,
             });
         }
-    }, [room.camOn, room.micOn, localStream, socket, id, currentUserId, isConnected]);
+    }, [room.camOn, room.micOn, localStream, socket, id, currentUserId]);
 
-    // ── Unirse a la llamada WebRTC cuando socket Y stream estén listos ────
+    // ── Unirse a la llamada WebRTC ────────────────────────────────────────
     useEffect(() => {
-        if (socket && localStream && isConnected) {
+        if (socket && localStream) {
             joinCall();
         }
-    }, [socket, localStream, isConnected, joinCall]);
+    }, [socket, localStream, joinCall]);
 
     // ── Manejo del chat vía socket ────────────────────────────────────────
-    // isConnected garantiza que este efecto se re-ejecuta cuando el socket
-    // está realmente conectado (no solo cuando la referencia existe)
     useEffect(() => {
-        if (!socket || !isConnected) return;
+        if (!socket) return;
 
-        console.log('💬 [RoomPage] Registrando listener de chat (socket conectado)');
         const handler = (msg: Message) =>
             setChatMessages(prev => [...prev, msg]);
-
         socket.on('receive_message', handler);
 
         return () => {
             socket.off('receive_message', handler);
         };
-    }, [socket, isConnected]); // ← isConnected como dependencia
+    }, [socket]);
 
     // ── Handlers memorizados ──────────────────────────────────────────────
     const handleSendMessage = useCallback(() => {
         const text = room.message.trim();
-        if (!text || !socket || !isConnected) return;
+        if (!text || !socket) return;
         socket.emit('send_message', { roomId: id, message: text });
         room.setMessage('');
-    }, [room, socket, id, isConnected]);
+    }, [room, socket, id, room.setMessage]);
 
     const handleLeaveRoom = useCallback(() => {
         leaveCall();
