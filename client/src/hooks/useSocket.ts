@@ -18,11 +18,17 @@ export function useSocket(roomId: string) {
     const displayName = userLogged?.displayName ?? 'Anónimo';
     const [participants, setParticipants] = useState<Participant[]>([]);
     const socketRef = useRef(socket);
+    const roomIdRef = useRef(roomId);
+    const displayNameRef = useRef(displayName);
+    const uidRef = useRef(uid);
 
-    // Sincroniza el módulo socket con la referencia interna
+    // Mantiene los refs actualizados en cada render
     useEffect(() => {
         socketRef.current = socket;
-    }, []);
+        roomIdRef.current = roomId;
+        displayNameRef.current = displayName;
+        uidRef.current = uid;
+    });
 
     // ── 1. Creación/recreación del socket cuando cambia el token ──────────────────
     useEffect(() => {
@@ -61,6 +67,17 @@ export function useSocket(roomId: string) {
 
             newSocket.on('connect', () => {
                 console.log(`✅ [useSocket] ¡Socket conectado exitosamente! ID único: ${newSocket.id}`);
+                const currentRoomId = roomIdRef.current;
+                const currentUid = uidRef.current;
+                const currentDisplayName = displayNameRef.current;
+                if (currentRoomId && currentUid) {
+                    console.log(`🔄 [useSocket] Re-emitiendo join-room tras (re)conexión a sala: ${currentRoomId}`);
+                    newSocket.emit('join-room', {
+                        roomId: currentRoomId,
+                        userId: currentUid,
+                        userName: currentDisplayName,
+                    });
+                }
             });
 
             newSocket.on('connect_error', (err) => {

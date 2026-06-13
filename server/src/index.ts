@@ -128,8 +128,9 @@ io.on('connection', (socket) => {
       return;
     }
 
+    socket.data.name = userName;
     console.log(`🚪 [Room] Usuario '${userName}' (${userId}) solicita unirse a la sala de chat: ${roomId}`);
-    
+
     socket.join(roomId);
     socket.join(userId); // Sala personal vital para señalización WebRTC individual
     console.log(`🔗 [Room] Socket ${socket.id} mapeado a sala '${roomId}' y a su canal privado '${userId}'`);
@@ -194,7 +195,7 @@ io.on('connection', (socket) => {
     const userId = socket.data.userId;
     const room = rooms.get(roomId);
     const participant = room?.get(userId);
-    const author = participant?.name ?? userId ?? 'Anónimo';
+    const author = participant?.name ?? socket.data.name ?? userId ?? 'Anónimo';
 
     console.log(`💬 [Chat] Mensaje recibido de [${author}] en sala [${roomId}]: "${message}"`);
 
