@@ -8,16 +8,11 @@ import { useWebRTC } from '../hooks/useWebRTC';
 import { ParticipantCard } from '../features/room/ParticipantCard';
 import { ChatPanel } from '../features/room/ChatPanel';
 import { RoomControls } from '../features/room/RoomControls';
-import { getRoomMessages } from '../services/roomService'
+
 interface Message {
     id: number;
     author: string;
     text: string;
-}
-
-interface FirestoreMessage {
-    author?: string
-    text?: string
 }
 
 // ─── Utilidad para grid de video ─────────────────────────────────────────────
@@ -118,7 +113,7 @@ function RoomPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { userLogged } = useAuthStore();
-    const room = useRoom()
+    const room = useRoom(userLogged?.displayName ?? 'Anónimo');
 
     const { participants: socketParticipants, socket } = useSocket(id ?? '');
     const currentUserId = userLogged?.uid ?? '';
@@ -201,31 +196,18 @@ function RoomPage() {
         }
     }, [socket, localStream, joinCall]);
 
-    // ── Cargar historial de Firestore al entrar ───────────────────────
-    useEffect(() => {
-        if (!id) return
-        getRoomMessages(id).then(result => {
-            const data = (Array.isArray(result.data) ? result.data : Object.values(result.data ?? {})) as FirestoreMessage[]
-            if (result.success && data.length > 0) {
-                setChatMessages(data.map((m: FirestoreMessage, i: number) => ({
-                    id: i + 1,
-                    author: m.author ?? 'Anónimo',
-                    text: m.text ?? '',
-                })))
-            }
-        })
-    }, [id])
-
     // ── Manejo del chat vía socket ────────────────────────────────────────
     useEffect(() => {
-        if (!socket) return
+        if (!socket) return;
+
         const handler = (msg: Message) =>
-            setChatMessages(prev => [...prev, msg])
-        socket.on('receive_message', handler)
+            setChatMessages(prev => [...prev, msg]);
+        socket.on('receive_message', handler);
+
         return () => {
-            socket.off('receive_message', handler)
-        }
-    }, [socket])
+            socket.off('receive_message', handler);
+        };
+    }, [socket]);
 
     // ── Handlers memorizados ──────────────────────────────────────────────
     const handleSendMessage = useCallback(() => {
@@ -233,7 +215,7 @@ function RoomPage() {
         if (!text || !socket) return;
         socket.emit('send_message', { roomId: id, message: text });
         room.setMessage('');
-    }, [room, socket, id]);
+    }, [room, socket, id, room.setMessage]);
 
     const handleLeaveRoom = useCallback(() => {
         leaveCall();
