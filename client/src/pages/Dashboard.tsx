@@ -17,27 +17,29 @@ function Dashboard() {
     const firstName = userLogged?.displayName?.split(' ')[0] ?? 'Estudiante'
     const username = userLogged?.email?.split('@')[0] ?? ''
     const [avatar, setAvatar] = useState<string | null>(null)
-
+    const [realUsername, setRealUsername] = useState('')
     const { rooms, loading, addRoom, removeRoom } = useRooms(userLogged?.uid ?? '')
 
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
     const [welcomeToast, setWelcomeToast] = useState('')
     const [joining, setJoining] = useState(false)
     const [joinError, setJoinError] = useState('')
+
     useEffect(() => {
-        const loadUserAvatar = async () => {
+        const loadUserData = async () => {
             if (!userLogged) return
             try {
                 const token = await userLogged.getIdToken()
                 const result = await getUser(userLogged.uid, token)
-                if (result.success && result.data?.avatar) {
-                    setAvatar(result.data.avatar)
+                if (result.success && result.data) {
+                    if (result.data.avatar) setAvatar(result.data.avatar)
+                    if (result.data.username) setRealUsername(result.data.username)
                 }
             } catch (err) {
-                console.error('Error cargando avatar:', err)
+                console.error('Error cargando datos del usuario:', err)
             }
         }
-        loadUserAvatar()
+        loadUserData()
     }, [userLogged])
 
     useEffect(() => {
@@ -115,7 +117,7 @@ function Dashboard() {
                         </div>
                         <div className="text-sm min-w-0">
                             <p className="font-semibold text-gray-800 truncate">{userLogged?.displayName}</p>
-                            <p className="text-gray-400 truncate">@{username}</p>
+                            <p className="text-gray-400 truncate">@{realUsername}</p>
                         </div>
                     </button>
                     <button onClick={() => setShowLogoutConfirm(true)} aria-label="Cerrar sesión" className="ml-2 text-gray-400 hover:text-red-500 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 rounded">
