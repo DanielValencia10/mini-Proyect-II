@@ -22,6 +22,7 @@ export const handleRooms = async (
     req: IncomingMessage,
     res: ServerResponse,
     id?: string,
+    uid?: string,
 ): Promise<void> => {
     const url = req.url ?? '/'
 
@@ -35,7 +36,7 @@ export const handleRooms = async (
         return send(res, 400, { error: 'ownerId requerido' })
     }
 
-    // GET /rooms/:id
+    // GET /rooms/:id — usado para validar que existe antes de unirse
     if (req.method === 'GET' && id) {
         const result = await dao.getRoomById(id)
         return send(res, result.success ? 200 : 404, result)
@@ -50,13 +51,27 @@ export const handleRooms = async (
 
     // PUT /rooms/:id
     if (req.method === 'PUT' && id) {
+        const existing = await dao.getRoomById(id)
+        if (!existing.success || !existing.data) {
+            return send(res, 404, { error: 'Sala no encontrada' })
+        }
+        if (existing.data.ownerId !== uid) {
+            return send(res, 403, { error: 'No tienes permiso para modificar esta sala' })
+        }
         const body = await parseBody(req) as Partial<Omit<RoomData, 'id' | 'ownerId'>>
         const result = await dao.updateRoom(id, body)
         return send(res, result.success ? 200 : 500, result)
     }
 
-    // DELETE /rooms/:id
+    // DELETE /rooms/:id — valida que el uid sea el dueño
     if (req.method === 'DELETE' && id) {
+        const existing = await dao.getRoomById(id)
+        if (!existing.success || !existing.data) {
+            return send(res, 404, { error: 'Sala no encontrada' })
+        }
+        if (existing.data.ownerId !== uid) {
+            return send(res, 403, { error: 'No tienes permiso para eliminar esta sala' })
+        }
         const result = await dao.deleteRoom(id)
         return send(res, result.success ? 200 : 500, result)
     }
