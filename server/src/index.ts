@@ -151,7 +151,7 @@ io.on('connection', (socket) => {
     }
 
     console.log(`🚪 [Room] Usuario '${userName}' (${userId}) solicita unirse a la sala de chat: ${roomId}`);
-
+    socket.data.userName = userName;
     socket.join(roomId);
     socket.join(userId); // Sala personal vital para señalización WebRTC individual
     console.log(`🔗 [Room] Socket ${socket.id} mapeado a sala '${roomId}' y a su canal privado '${userId}'`);
@@ -195,7 +195,7 @@ io.on('connection', (socket) => {
 
     console.log(`🚪 [Room] El usuario (${userId}) está abandonando la sala: ${roomId}`);
     socket.leave(roomId);
-    socket.leave(userId);
+
 
     const room = rooms.get(roomId);
     if (room) {
@@ -214,10 +214,30 @@ io.on('connection', (socket) => {
   // ─── Chat ─────────────────────────────────────────────────────────
   socket.on('send_message', async ({ roomId, message }: { roomId: string; message: string }) => {
     const userId = socket.data.userId
-    const room = rooms.get(roomId)
-    const participant = room?.get(userId)
-    const author = participant?.name ?? userId ?? 'Anónimo'
 
+    let room = rooms.get(roomId)
+    if (!room) {
+      room = new Map()
+      rooms.set(roomId, room)
+    }
+
+    let participant = room.get(userId)
+    if (!participant) {
+      // El usuario quedó fuera del mapa de la sala (join-call sin join-room previo).
+      // Lo reinsertamos para que tenga nombre correcto y aparezca en la lista.
+      participant = {
+        id: userId,
+        name: socket.data.userName ?? 'Anónimo',
+        speaking: false,
+        camOn: false,
+        micOn: false,
+      }
+      room.set(userId, participant)
+      io.to(roomId).emit('room-participants', Array.from(room.values()))
+      console.log(`🔧 [Chat] Participante [${userId}] reinsertado en la sala [${roomId}] (faltaba tras reconexión).`)
+    }
+
+    const author = participant.name
     const newMessage = {
       id: Date.now(),
       author,

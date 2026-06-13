@@ -63,18 +63,50 @@ export function useSocket(roomId: string) {
                 console.log(`✅ [useSocket] ¡Socket conectado exitosamente! ID único: ${newSocket.id}`);
                 setIsConnected(true); // ← dispara re-render en RoomPage
             });
+            console.log(
+                "🌐 NUEVO SOCKET CREADO:",
+                newSocket.id,
+                "room:",
+                roomId
+            );
 
             newSocket.on('connect_error', (err) => {
                 console.error('❌ [useSocket] Error crítico en el canal de comunicación (Handshake):', err.message);
                 setIsConnected(false);
             });
 
-            newSocket.on('disconnect', (reason) => {
-                console.warn('🔌 [useSocket] El socket se ha desconectado. Razón:', reason);
-                setIsConnected(false);
+            newSocket.on("disconnect", (reason) => {
+                console.log("❌ SOCKET DESCONECTADO:", reason);
+            });
+
+            newSocket.io.on("reconnect_attempt", () => {
+                console.log("🔄 INTENTANDO RECONECTAR");
+            });
+
+            newSocket.io.on("reconnect", () => {
+                console.log("✅ SOCKET RECONECTADO");
             });
         } else {
             console.log('ℹ️ [useSocket] Reutilizando instancia de socket existente y activa.');
+
+            // El socket ya existe y puede estar conectado, pero el estado
+            // 'isConnected' es propio de ESTA instancia del componente y
+            // arranca en false. Si no lo sincronizamos aquí, el evento
+            // 'connect' jamás volverá a disparar (el socket ya está
+            // conectado) y el efecto de unión a la sala se queda
+            // bloqueado para siempre.
+            if (socketRef.current.connected) {
+                console.log('✅ [useSocket] Socket reutilizado ya está conectado. Sincronizando isConnected...');
+                setIsConnected(true);
+            } else {
+                console.log('⏳ [useSocket] Socket reutilizado aún no está conectado.');
+                setIsConnected(false);
+
+                socketRef.current.once('connect', () => {
+                    console.log(`✅ [useSocket] Socket reutilizado conectado. ID: ${socketRef.current?.id}`);
+                    setIsConnected(true);
+                });
+            }
         }
 
     }, [token, uid]);

@@ -155,13 +155,40 @@ function RoomPage() {
                     audio: true,
                 });
 
-                stream.getAudioTracks().forEach(t => (t.enabled = room.micOn));
-                stream.getVideoTracks().forEach(t => (t.enabled = room.camOn));
+                stream.getAudioTracks().forEach(
+                    t => (t.enabled = room.micOn)
+                );
+
+                stream.getVideoTracks().forEach(
+                    t => (t.enabled = room.camOn)
+                );
 
                 setLocalStream(stream);
                 streamInstance = stream;
+
             } catch (err) {
-                console.error('Error accediendo a periféricos:', err);
+                console.error('Error accediendo a periféricos (video+audio):', err);
+
+                // Fallback: intentar solo con audio (p.ej. cámara ya en uso por otra app/pestaña)
+                try {
+                    const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
+                        video: false,
+                        audio: true,
+                    });
+
+                    audioOnlyStream.getAudioTracks().forEach(
+                        t => (t.enabled = room.micOn)
+                    );
+
+                    setLocalStream(audioOnlyStream);
+                    streamInstance = audioOnlyStream;
+
+                    console.warn('⚠️ Continuando sin video: solo se obtuvo audio.');
+                } catch (audioErr) {
+                    console.error('Error accediendo a periféricos (solo audio):', audioErr);
+                    // Sin medios disponibles: el usuario entra en modo "solo recibir"
+                    setLocalStream(null);
+                }
             }
         }
 
@@ -169,9 +196,10 @@ function RoomPage() {
 
         return () => {
             streamInstance?.getTracks().forEach(track => track.stop());
-            leaveCall();
+
+            // NO llamar leaveCall aquí
+            // leaveCall();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
     // ── Sincronización de pista de audio ───────────────────────────────────
@@ -196,10 +224,10 @@ function RoomPage() {
 
     // ── Unirse a la llamada WebRTC ────────────────────────────────────────
     useEffect(() => {
-        if (socket && localStream) {
+        if (socket) {
             joinCall();
         }
-    }, [socket, localStream, joinCall]);
+    }, [socket, joinCall]);
 
     // ── Cargar historial de Firestore al entrar ───────────────────────
     useEffect(() => {
