@@ -51,7 +51,7 @@ export function useSocket(roomId: string) {
         }
 
         if (!socketRef.current) {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const backendUrl = import.meta.env.VITE_REALTIME_URL ?? import.meta.env.VITE_BACKEND_URL;
             console.log('🌐 [useSocket] Intentando instanciar io() hacia la URL:', backendUrl);
 
             const newSocket = io(backendUrl, {
