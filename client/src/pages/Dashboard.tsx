@@ -8,37 +8,34 @@ import { useRooms } from '../hooks/useRooms'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Skeleton from '../components/Skeleton'
 import Toast from '../components/Toast'
-import { getRoomById } from '../services/roomService'
 
 
 function Dashboard() {
     const navigate = useNavigate()
     const { userLogged, logout } = useAuthStore()
     const firstName = userLogged?.displayName?.split(' ')[0] ?? 'Estudiante'
+    const username = userLogged?.email?.split('@')[0] ?? ''
     const [avatar, setAvatar] = useState<string | null>(null)
-    const [realUsername, setRealUsername] = useState('')
+
     const { rooms, loading, addRoom, removeRoom } = useRooms(userLogged?.uid ?? '')
 
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
     const [welcomeToast, setWelcomeToast] = useState('')
-    const [joining, setJoining] = useState(false)
-    const [joinError, setJoinError] = useState('')
 
     useEffect(() => {
-        const loadUserData = async () => {
+        const loadUserAvatar = async () => {
             if (!userLogged) return
             try {
                 const token = await userLogged.getIdToken()
                 const result = await getUser(userLogged.uid, token)
-                if (result.success && result.data) {
-                    if (result.data.avatar) setAvatar(result.data.avatar)
-                    if (result.data.username) setRealUsername(result.data.username)
+                if (result.success && result.data?.avatar) {
+                    setAvatar(result.data.avatar)
                 }
             } catch (err) {
-                console.error('Error cargando datos del usuario:', err)
+                console.error('Error cargando avatar:', err)
             }
         }
-        loadUserData()
+        loadUserAvatar()
     }, [userLogged])
 
     useEffect(() => {
@@ -63,22 +60,9 @@ function Dashboard() {
         setSaving(false)
     }
 
-    const handleJoin = async () => {
+    const handleJoin = () => {
         if (!joinId.trim()) return
-        setJoining(true)
-        setJoinError('')
-
-        const roomId = joinId.trim().toUpperCase()
-        const result = await getRoomById(roomId)
-
-        setJoining(false)
-
-        if (!result.success || !result.data) {
-            setJoinError('No existe ninguna sala con ese ID')
-            return
-        }
-
-        navigate(`/room/${roomId}`)
+        window.location.href = `/room/${joinId.trim().toUpperCase()}`
     }
 
     return (
@@ -104,19 +88,14 @@ function Dashboard() {
                     >
                         <div className="bg-gray-100 rounded-full p-1 flex-shrink-0 w-10 h-10 flex items-center justify-center overflow-hidden">
                             {avatar ? (
-                                <img
-                                    src={avatar}
-                                    alt="Avatar"
-                                    referrerPolicy="no-referrer"
-                                    className="w-full h-full object-cover rounded-full"
-                                />
+                                <img src={avatar} alt="Avatar" className="w-full h-full object-cover rounded-full" />
                             ) : (
                                 <User className="h-5 w-5 text-gray-500" />
                             )}
                         </div>
                         <div className="text-sm min-w-0">
                             <p className="font-semibold text-gray-800 truncate">{userLogged?.displayName}</p>
-                            <p className="text-gray-400 truncate">@{realUsername}</p>
+                            <p className="text-gray-400 truncate">@{username}</p>
                         </div>
                     </button>
                     <button onClick={() => setShowLogoutConfirm(true)} aria-label="Cerrar sesión" className="ml-2 text-gray-400 hover:text-red-500 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 rounded">
@@ -173,32 +152,26 @@ function Dashboard() {
 
                 {/* Modal unirse */}
                 {showJoin && (
-                    <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
-                        <div className="flex gap-3 items-center">
-                            <input
-                                value={joinId}
-                                onChange={e => { setJoinId(e.target.value); setJoinError('') }}
-                                onKeyDown={e => e.key === 'Enter' && handleJoin()}
-                                placeholder="ID de la sala (ej: ABC123)..."
-                                className="flex-1 border border-gray-200 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-teal-400 text-sm font-mono uppercase"
-                            />
-                            <button
-                                onClick={handleJoin}
-                                disabled={joining}
-                                className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {joining && <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />}
-                                Unirse
-                            </button>
-                            <button onClick={() => { setShowJoin(false); setJoinError('') }} className="text-gray-400 hover:text-gray-600 text-sm">
-                                Cancelar
-                            </button>
-                        </div>
-                        {joinError && (
-                            <p role="alert" className="mt-2 text-sm text-red-500">{joinError}</p>
-                        )}
+                    <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex gap-3 items-center">
+                        <input
+                            value={joinId}
+                            onChange={e => setJoinId(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleJoin()}
+                            placeholder="ID de la sala (ej: ABC123)..."
+                            className="flex-1 border border-gray-200 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-teal-400 text-sm font-mono uppercase"
+                        />
+                        <button
+                            onClick={handleJoin}
+                            className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium"
+                        >
+                            Unirse
+                        </button>
+                        <button onClick={() => setShowJoin(false)} className="text-gray-400 hover:text-gray-600 text-sm">
+                            Cancelar
+                        </button>
                     </div>
                 )}
+
                 {/* Lista salas */}
                 <h2 className="text-xl font-bold text-gray-800 mb-4">Mis Salas</h2>
 

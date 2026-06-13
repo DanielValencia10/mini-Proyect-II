@@ -17,7 +17,6 @@ export function useSocket(roomId: string) {
     const uid = userLogged?.uid;
     const displayName = userLogged?.displayName ?? 'Anónimo';
     const [participants, setParticipants] = useState<Participant[]>([]);
-    const [isConnected, setIsConnected] = useState(false); // ← CLAVE: estado real de React
     const socketRef = useRef(socket);
     const roomIdRef = useRef(roomId);
     const displayNameRef = useRef(displayName);
@@ -31,7 +30,7 @@ export function useSocket(roomId: string) {
         uidRef.current = uid;
     });
 
-    // ── 1. Creación/recreación del socket cuando cambia el token ──────────────────────
+    // ── 1. Creación/recreación del socket cuando cambia el token ──────────────────
     useEffect(() => {
         console.log('🔄 [useSocket] Ejecutando efecto de inicialización de conexión...', { uid: !!uid, token: !!token });
         if (!uid || !token) {
@@ -48,7 +47,6 @@ export function useSocket(roomId: string) {
                 currentSocket.disconnect();
                 socketRef.current = null;
                 socket = null;
-                setIsConnected(false);
             }
         }
 
@@ -58,10 +56,12 @@ export function useSocket(roomId: string) {
 
             const newSocket = io(backendUrl, {
                 auth: { token },
-                transports: ['polling', 'websocket'], // polling primero para Render
-                withCredentials: true,
+                transports: ['websocket'],
+                upgrade: false,
+                withCredentials: true
             });
 
+            // Asignamos tanto a la referencia del hook como a la variable global del módulo
             socketRef.current = newSocket;
             socket = newSocket;
 
@@ -78,7 +78,7 @@ export function useSocket(roomId: string) {
 
             newSocket.on('connect_error', (err) => {
                 console.error('❌ [useSocket] Error crítico en el canal de comunicación (Handshake):', err.message);
-                setIsConnected(false);
+                console.error('📋 Detalles del error:', err);
             });
 
             newSocket.on("disconnect", (reason) => {
@@ -118,22 +118,22 @@ export function useSocket(roomId: string) {
 
     }, [token, uid]);
 
-    // ── 2. Unirse a la sala — solo cuando isConnected es true ────────────────────────
+    // ── 2. Manejo de la sala y escucha de participantes ─────────────────────────────
     useEffect(() => {
         const currentSocket = socketRef.current;
         console.log('🚪 [useSocket] Ejecutando efecto de suscripción a la sala...', {
             roomId,
             uid,
             socketExiste: !!currentSocket,
-            socketConectado: currentSocket?.connected,
-            isConnected,
+            socketConectado: currentSocket?.connected
         });
 
-        if (!uid || !currentSocket || !isConnected) {
-            console.warn('⚠️ [useSocket] No se puede unir a la sala: socket no listo aún.');
+        if (!uid || !currentSocket) {
+            console.warn('⚠️ [useSocket] No se puede unir a la sala: Faltan credenciales del usuario o la instancia de conexión.');
             return;
         }
 
+        // Emitimos la entrada
         console.log(`📤 [useSocket] Emitiendo 'join-room' a la sala [${roomId}] para el usuario: ${displayName}`);
         currentSocket.emit('join-room', {
             roomId,
@@ -148,6 +148,7 @@ export function useSocket(roomId: string) {
 
         currentSocket.on('room-participants', handleParticipants);
 
+        // Limpieza de eventos al desmontar la vista de la sala
         return () => {
             console.log(`🛑 [useSocket] Desmontando hook de sala [${roomId}]. Limpiando listeners...`);
             if (currentSocket.connected) {
@@ -158,9 +159,9 @@ export function useSocket(roomId: string) {
             }
             currentSocket.off('room-participants', handleParticipants);
         };
-    }, [roomId, uid, displayName, isConnected]); // ← isConnected como dependencia
+    }, [roomId, uid, displayName, token]); // Añadimos token para re-suscripción si cambia el socket
 
-    // ── 3. Método manual de desconexión completa ─────────────────────────────────────
+    // ── 3. Método manual de desconexión completa ────────────────────────────────────
     const disconnectSocket = useCallback(() => {
         console.log('🔌 [useSocket] Solicitud manual de desconexión total invocada.');
         if (socket) {
@@ -168,12 +169,11 @@ export function useSocket(roomId: string) {
             socket = null;
             socketRef.current = null;
             setParticipants([]);
-            setIsConnected(false);
             console.log('✨ [useSocket] Conexión destruida y estados reiniciados.');
         } else {
             console.log('ℹ️ [useSocket] No hay ninguna conexión activa para destruir.');
         }
     }, []);
 
-    return { participants, socket: socketRef.current, isConnected, disconnectSocket };
+    return { participants, socket: socketRef.current, disconnectSocket };
 }
