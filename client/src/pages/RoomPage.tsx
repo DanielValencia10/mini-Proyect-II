@@ -15,6 +15,11 @@ interface Message {
     text: string;
 }
 
+interface FirestoreMessage {
+    author?: string
+    text?: string
+}
+
 // ─── Utilidad para grid de video ─────────────────────────────────────────────
 function getGridClass(count: number): string {
     if (count === 1) return 'grid-cols-1';
@@ -200,10 +205,9 @@ function RoomPage() {
     useEffect(() => {
         if (!id) return
         getRoomMessages(id).then(result => {
-            console.log('📜 Historial data:', JSON.stringify(result.data))
-            const data = Array.isArray(result.data) ? result.data : Object.values(result.data ?? {})
+            const data = (Array.isArray(result.data) ? result.data : Object.values(result.data ?? {})) as FirestoreMessage[]
             if (result.success && data.length > 0) {
-                setChatMessages(data.map((m: any, i: number) => ({
+                setChatMessages(data.map((m: FirestoreMessage, i: number) => ({
                     id: i + 1,
                     author: m.author ?? 'Anónimo',
                     text: m.text ?? '',
@@ -229,7 +233,7 @@ function RoomPage() {
         if (!text || !socket) return;
         socket.emit('send_message', { roomId: id, message: text });
         room.setMessage('');
-    }, [room, socket, id, room.setMessage]);
+    }, [room, socket, id]);
 
     const handleLeaveRoom = useCallback(() => {
         leaveCall();
