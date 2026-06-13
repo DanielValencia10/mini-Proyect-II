@@ -55,18 +55,19 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 
   if (url.startsWith('/users')) {
-    if (!await verifyToken(req, res)) {
-      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta: ${url}`);
-      return;
+    const uid = await verifyToken(req, res)
+    if (!uid) {
+      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta: ${url}`)
+      return
     }
-    await handleUsers(req, res, url.slice('/users'.length) || '');
-    return;
+    await handleUsers(req, res, url.slice('/users'.length) || '')
+    return
   }
-
 
   const messagesMatch = url.match(/^\/rooms\/([^/?]+)\/messages$/)
   if (messagesMatch) {
-    if (!await verifyToken(req, res)) return
+    const uid = await verifyToken(req, res)
+    if (!uid) return
     try {
       const { db } = await import('./firebase')
       const snap = await db.collection('rooms').doc(messagesMatch[1])
@@ -82,14 +83,15 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 
 
-  const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/);
+  const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/)
   if (roomsMatch) {
-    if (!await verifyToken(req, res)) {
-      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta de salas: ${url}`);
-      return;
+    const uid = await verifyToken(req, res)
+    if (!uid) {
+      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta de salas: ${url}`)
+      return
     }
-    await handleRooms(req, res, roomsMatch[1] || undefined);
-    return;
+    await handleRooms(req, res, roomsMatch[1] || undefined, uid)
+    return
   }
 
   if (url.startsWith('/api-docs')) {
