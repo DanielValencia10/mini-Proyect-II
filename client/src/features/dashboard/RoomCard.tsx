@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Hash, Users, Trash2, Copy, Check, Pencil, X } from 'lucide-react'
 import useAuthStore from '../../stores/useAuthStore'
@@ -25,6 +25,11 @@ export function RoomCard({ room, onDelete, onRename }: Props) {
     const [editing, setEditing] = useState(false)
     const [editName, setEditName] = useState(room.name)
     const [saving, setSaving] = useState(false)
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    useEffect(() => {
+        if (editing) inputRef.current?.focus()
+    }, [editing])
 
     const copyId = () => {
         navigator.clipboard.writeText(room.id)
@@ -52,7 +57,7 @@ export function RoomCard({ room, onDelete, onRename }: Props) {
                                 onChange={e => setEditName(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') setEditing(false) }}
                                 maxLength={50}
-                                autoFocus
+                                ref={inputRef}
                                 className="flex-1 border border-blue-400 rounded px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-400"
                             />
                             <button onClick={handleSaveRename} disabled={saving} aria-label="Guardar nombre" className="text-green-600 hover:text-green-700 disabled:opacity-50">

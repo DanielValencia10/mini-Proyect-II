@@ -152,14 +152,6 @@ function RoomPage() {
                     audio: true,
                 });
 
-                stream.getAudioTracks().forEach(
-                    t => (t.enabled = room.micOn)
-                );
-
-                stream.getVideoTracks().forEach(
-                    t => (t.enabled = room.camOn)
-                );
-
                 setLocalStream(stream);
                 streamInstance = stream;
 
@@ -172,10 +164,6 @@ function RoomPage() {
                         video: false,
                         audio: true,
                     });
-
-                    audioOnlyStream.getAudioTracks().forEach(
-                        t => (t.enabled = room.micOn)
-                    );
 
                     setLocalStream(audioOnlyStream);
                     streamInstance = audioOnlyStream;
@@ -276,7 +264,7 @@ function RoomPage() {
         if (!text || !socket) return;
         socket.emit('send_message', { roomId: id, message: text });
         room.setMessage('');
-    }, [room, socket, id, room.setMessage]);
+    }, [room, socket, id]);
 
     const handleLeaveRoom = useCallback(() => {
         leaveCall();
