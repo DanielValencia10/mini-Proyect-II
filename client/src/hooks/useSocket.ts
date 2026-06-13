@@ -17,6 +17,7 @@ export function useSocket(roomId: string) {
     const uid = userLogged?.uid;
     const displayName = userLogged?.displayName ?? 'Anónimo';
     const [participants, setParticipants] = useState<Participant[]>([]);
+    const [isConnected, setIsConnected] = useState(false);
     const socketRef = useRef(socket);
     const roomIdRef = useRef(roomId);
     const displayNameRef = useRef(displayName);
@@ -30,7 +31,7 @@ export function useSocket(roomId: string) {
         uidRef.current = uid;
     });
 
-    // ── 1. Creación/recreación del socket cuando cambia el token ──────────────────
+    // ── 1. Creación/recreación del socket cuando cambia el token ──────────────────────
     useEffect(() => {
         console.log('🔄 [useSocket] Ejecutando efecto de inicialización de conexión...', { uid: !!uid, token: !!token });
         if (!uid || !token) {
@@ -47,6 +48,7 @@ export function useSocket(roomId: string) {
                 currentSocket.disconnect();
                 socketRef.current = null;
                 socket = null;
+                setIsConnected(false);
             }
         }
 
@@ -56,61 +58,63 @@ export function useSocket(roomId: string) {
 
             const newSocket = io(backendUrl, {
                 auth: { token },
-                transports: ['websocket'],
-                upgrade: false,
-                withCredentials: true
+                transports: ['polling', 'websocket'],
+                withCredentials: true,
             });
 
-            // Asignamos tanto a la referencia del hook como a la variable global del módulo
             socketRef.current = newSocket;
             socket = newSocket;
 
             newSocket.on('connect', () => {
-                console.log(`✅ [useSocket] ¡Socket conectado exitosamente! ID único: ${newSocket.id}`);
-                const currentRoomId = roomIdRef.current;
-                const currentUid = uidRef.current;
-                const currentDisplayName = displayNameRef.current;
-                if (currentRoomId && currentUid) {
-                    console.log(`🔄 [useSocket] Re-emitiendo join-room tras (re)conexión a sala: ${currentRoomId}`);
-                    newSocket.emit('join-room', {
-                        roomId: currentRoomId,
-                        userId: currentUid,
-                        userName: currentDisplayName,
-                    });
-                }
+                console.log(`✅ [useSocket] ¡Socket conectado! ID: ${newSocket.id}`);
+                setIsConnected(true);
             });
 
             newSocket.on('connect_error', (err) => {
-                console.error('❌ [useSocket] Error crítico en el canal de comunicación (Handshake):', err.message);
-                console.error('📋 Detalles del error:', err);
+                console.error('❌ [useSocket] Error en el canal de comunicación:', err.message);
+                setIsConnected(false);
             });
 
             newSocket.on('disconnect', (reason) => {
-                console.warn('🔌 [useSocket] El socket se ha desconectado. Razón:', reason);
+                console.log('❌ SOCKET DESCONECTADO:', reason);
+                setIsConnected(false);
+            });
+
+            newSocket.io.on('reconnect_attempt', () => {
+                console.log('🔄 INTENTANDO RECONECTAR');
+            });
+
+            newSocket.io.on('reconnect', () => {
+                console.log('✅ SOCKET RECONECTADO');
             });
         } else {
-            console.log('ℹ️ [useSocket] Reutilizando instancia de socket existente y activa.');
+            console.log('ℹ️ [useSocket] Reutilizando instancia de socket existente.');
+
+            if (socketRef.current.connected) {
+                console.log('✅ [useSocket] Socket reutilizado ya conectado. Sincronizando isConnected...');
+                setIsConnected(true);
+            } else {
+                console.log('⏳ [useSocket] Socket reutilizado aún no conectado.');
+                setIsConnected(false);
+                socketRef.current.once('connect', () => {
+                    console.log(`✅ [useSocket] Socket reutilizado conectado. ID: ${socketRef.current?.id}`);
+                    setIsConnected(true);
+                });
+            }
         }
 
     }, [token, uid]);
 
-    // ── 2. Manejo de la sala y escucha de participantes ─────────────────────────────
+    // ── 2. Unirse a la sala — solo cuando isConnected es true ────────────────────────
     useEffect(() => {
         const currentSocket = socketRef.current;
-        console.log('🚪 [useSocket] Ejecutando efecto de suscripción a la sala...', {
-            roomId,
-            uid,
-            socketExiste: !!currentSocket,
-            socketConectado: currentSocket?.connected
-        });
 
-        if (!uid || !currentSocket) {
-            console.warn('⚠️ [useSocket] No se puede unir a la sala: Faltan credenciales del usuario o la instancia de conexión.');
+        if (!uid || !currentSocket || !isConnected) {
+            console.warn('⚠️ [useSocket] No se puede unir a la sala: socket no listo aún.');
             return;
         }
 
-        // Emitimos la entrada
-        console.log(`📤 [useSocket] Emitiendo 'join-room' a la sala [${roomId}] para el usuario: ${displayName}`);
+        console.log(`📤 [useSocket] Emitiendo 'join-room' a la sala [${roomId}] para: ${displayName}`);
         currentSocket.emit('join-room', {
             roomId,
             userId: uid,
@@ -118,38 +122,33 @@ export function useSocket(roomId: string) {
         });
 
         const handleParticipants = (data: Participant[]) => {
-            console.log('👥 [useSocket] Lista de participantes actualizada desde el backend:', data);
+            console.log('👥 [useSocket] Participantes actualizados:', data);
             setParticipants(data);
         };
 
         currentSocket.on('room-participants', handleParticipants);
 
-        // Limpieza de eventos al desmontar la vista de la sala
         return () => {
-            console.log(`🛑 [useSocket] Desmontando hook de sala [${roomId}]. Limpiando listeners...`);
+            console.log(`🛑 [useSocket] Desmontando sala [${roomId}].`);
             if (currentSocket.connected) {
-                console.log(`📤 [useSocket] Emitiendo 'leave-room' para la sala: ${roomId}`);
                 currentSocket.emit('leave-room', { roomId, userId: uid });
-            } else {
-                console.warn('ℹ️ [useSocket] Saltando emision de leave-room: El socket ya estaba desconectado.');
             }
             currentSocket.off('room-participants', handleParticipants);
         };
-    }, [roomId, uid, displayName, token]); // Añadimos token para re-suscripción si cambia el socket
+    }, [roomId, uid, displayName, isConnected]);
 
-    // ── 3. Método manual de desconexión completa ────────────────────────────────────
+    // ── 3. Método manual de desconexión completa ─────────────────────────────────────
     const disconnectSocket = useCallback(() => {
-        console.log('🔌 [useSocket] Solicitud manual de desconexión total invocada.');
+        console.log('🔌 [useSocket] Desconexión manual invocada.');
         if (socket) {
             socket.disconnect();
             socket = null;
             socketRef.current = null;
             setParticipants([]);
+            setIsConnected(false);
             console.log('✨ [useSocket] Conexión destruida y estados reiniciados.');
-        } else {
-            console.log('ℹ️ [useSocket] No hay ninguna conexión activa para destruir.');
         }
     }, []);
 
-    return { participants, socket: socketRef.current, disconnectSocket };
+    return { participants, socket: socketRef.current, isConnected, disconnectSocket };
 }

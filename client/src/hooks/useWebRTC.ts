@@ -133,14 +133,31 @@ export function useWebRTC(
   // ── Iniciar llamada (oferta) ──────────────────────────────────────
   const callUser = useCallback(
     async (remoteUserId: string) => {
-      console.log(`📞 [WebRTC] Iniciando oferta de llamada hacia: ${remoteUserId}`);
+
+      console.log("🚀 LLAMANDO A:", remoteUserId);
+
+      console.log(
+        `📞 [WebRTC] Iniciando oferta de llamada hacia: ${remoteUserId}`
+      );
+
       const pc = createPeerConnection(remoteUserId);
+
       try {
         const offer = await pc.createOffer();
+
         await pc.setLocalDescription(offer);
-        socket?.emit('webrtc-offer', { roomId, offer, to: remoteUserId });
+
+        socket?.emit('webrtc-offer', {
+          roomId,
+          offer,
+          to: remoteUserId,
+        });
+
       } catch (err) {
-        console.error('❌ [WebRTC] Error creando oferta:', err);
+        console.error(
+          '❌ [WebRTC] Error creando oferta:',
+          err
+        );
       }
     },
     [createPeerConnection, roomId, socket]
@@ -233,18 +250,17 @@ export function useWebRTC(
     socket.on('webrtc-answer', handleAnswer);
     socket.on('webrtc-ice-candidate', handleIceCandidate);
 
-    socket.on('user-joined-call', (data: { userId: string }) => {
-      console.log(`👤 [Socket] El usuario ${data.userId} se unió a la llamada.`);
+    socket.on('user-joined-call', (data) => {
+      console.log(
+        '👤 user-joined-call',
+        data.userId,
+        'yo:',
+        currentUserId
+      );
+
       if (data.userId !== currentUserId) {
-        // Cerrar PC previo (puede existir si el usuario reconectó)
-        const old = peerConnections.current.get(data.userId);
-        if (old) {
-          console.log(`♻️ [WebRTC] Cerrando PC anterior de ${data.userId} antes de reconexión.`);
-          old.close();
-          peerConnections.current.delete(data.userId);
-          setRemoteStreams((prev) => prev.filter((s) => s.userId !== data.userId));
-        }
-        createPeerConnection(data.userId);
+        console.log('🚀 LLAMANDO A:', data.userId);
+        callUser(data.userId);
       }
     });
 
@@ -282,22 +298,22 @@ export function useWebRTC(
   // ── Limpieza total al desmontar ───────────────────────────────────
   useEffect(() => {
     console.log('🚀 [useWebRTC] Hook montado.');
+
     return () => {
-      const currentSocket = socketRef.current;
-      const currentRoomId = roomIdRef.current;
-      const currentConnections = peerConnections.current;
+      console.log('🔴 useWebRTC DESMONTADO');
 
-      if (currentConnections.size === 0 && (!currentSocket || !currentSocket.connected)) {
-        return;
-      }
+      // NO emitir leave-call aquí.
+      // Sólo cerrar conexiones locales.
 
-      if (currentSocket && currentRoomId) {
-        currentSocket.emit('leave-call', { roomId: currentRoomId });
-      }
+      peerConnections.current.forEach((pc) => {
+        try {
+          pc.close();
+        } catch (error) {
+          console.error('Error cerrando PeerConnection:', error);
+        }
+      });
 
-      currentConnections.forEach((pc) => pc.close());
-      currentConnections.clear();
-      setRemoteStreams([]);
+      peerConnections.current.clear();
     };
   }, []);
 
@@ -309,8 +325,17 @@ export function useWebRTC(
 
   const leaveCall = useCallback(() => {
     console.log('📣 [Acción] Abandonando llamada.');
+
     socket?.emit('leave-call', { roomId });
-    peerConnections.current.forEach((pc) => pc.close());
+
+    peerConnections.current.forEach((pc) => {
+      try {
+        pc.close();
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
     peerConnections.current.clear();
     setRemoteStreams([]);
   }, [socket, roomId]);

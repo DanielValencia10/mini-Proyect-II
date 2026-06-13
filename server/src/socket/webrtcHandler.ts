@@ -14,8 +14,21 @@ interface RTCIceCandidateInit {
 
 export function registerWebRTCHandlers(io: Server) {
     io.on('connection', (socket: Socket) => {
-        console.log(`🔌 [registerWebRTCHandlers] Sockets vinculados para señalización. ID: ${socket.id}`);
+        console.log(
+            `🔌 [registerWebRTCHandlers] Socket conectado. ID: ${socket.id}, UID: ${socket.data.userId}`
+        );
 
+        if (socket.data.userId) {
+            socket.join(socket.data.userId);
+
+            console.log(
+                `👤 [WebRTC Backend] Socket ${socket.id} unido a sala privada ${socket.data.userId}`
+            );
+        } else {
+            console.warn(
+                `⚠️ [WebRTC Backend] socket.data.userId viene vacío`
+            );
+        }
         // ── 1. Cuando un usuario activa su cámara/micrófono ─────────────────────────────
         socket.on('join-call', ({ roomId }: { roomId: string }) => {
             const userId = socket.data.userId;
@@ -25,9 +38,9 @@ export function registerWebRTCHandlers(io: Server) {
             socket.join(`call:${roomId}`);
             console.log(`➡️ [WebRTC Backend] Socket ${socket.id} unido exitosamente a la sala 'call:${roomId}'`);
 
-            // Notificar a los demás en la sala de chat que alguien se unió a la llamada
-            console.log(`📤 [WebRTC Backend] Notificando 'user-joined-call' a la sala [${roomId}] omitiendo al emisor.`);
-            socket.to(roomId).emit('user-joined-call', {
+            // Notificar SOLO a quienes ya están en la llamada (no a todo el chat)
+            console.log(`📤 [WebRTC Backend] Notificando 'user-joined-call' a la sala [call:${roomId}] omitiendo al emisor.`);
+            socket.to(`call:${roomId}`).emit('user-joined-call', {
                 userId,
             });
 
@@ -46,6 +59,12 @@ export function registerWebRTCHandlers(io: Server) {
             } else {
                 console.log(`ℹ️ [WebRTC Backend] El usuario [${userId}] es el primero en unirse a la llamada.`);
             }
+            console.log(
+                'ROOM CALL:',
+                Array.from(
+                    io.sockets.adapter.rooms.get(`call:${roomId}`) || []
+                )
+            );
         });
 
         // ── 2. Abandonar llamada voluntariamente ──────────────────────────────────────────
@@ -63,24 +82,38 @@ export function registerWebRTCHandlers(io: Server) {
         socket.on('webrtc-offer', (data: {
             roomId: string;
             offer: RTCSessionDescriptionInit;
-            to: string; // Recibe el userId del destinatario
+            to: string;
         }) => {
-            console.log(`🔥 [Señalización] Recibida OFERTA de: [${socket.data.userId}] ➡️ Reenviando hacia: [${data.to}]`);
 
-            // Enviamos a la sala individual del destinatario objetivo (Firebase UID)
+            console.log(
+                `🔥 [Señalización] OFERTA ${socket.data.userId} → ${data.to}`
+            );
+
+            console.log(
+                `🔥 [Señalización] ¿Existe sala privada destino?`,
+                io.sockets.adapter.rooms.has(data.to)
+            );
+
             io.to(data.to).emit('webrtc-offer', {
                 offer: data.offer,
                 from: socket.data.userId,
             });
         });
-
         // ── 4. Señalización WebRTC - RESPUESTA ────────────────────────────────────────────
         socket.on('webrtc-answer', (data: {
             roomId: string;
             answer: RTCSessionDescriptionInit;
-            to: string; // Recibe el userId del destinatario
+            to: string;
         }) => {
-            console.log(`🤝 [Señalización] Recibida RESPUESTA (Answer) de: [${socket.data.userId}] ➡️ Reenviando hacia: [${data.to}]`);
+
+            console.log(
+                `🤝 [Señalización] ANSWER ${socket.data.userId} → ${data.to}`
+            );
+
+            console.log(
+                `🤝 [Señalización] ¿Existe sala privada destino?`,
+                io.sockets.adapter.rooms.has(data.to)
+            );
 
             io.to(data.to).emit('webrtc-answer', {
                 answer: data.answer,
@@ -92,25 +125,36 @@ export function registerWebRTCHandlers(io: Server) {
         socket.on('webrtc-ice-candidate', (data: {
             roomId: string;
             candidate: RTCIceCandidateInit;
-            to?: string; // Recibe el userId del destinatario
+            to?: string;
         }) => {
+
             if (data.to) {
-                console.log(`❄️ [Señalización] Recibido ICE Candidate de: [${socket.data.userId}] ➡️ Redirigiendo a target específico: [${data.to}]`);
-                // Enviar solo al destinatario específico (Sala individual de Firebase UID)
+
+                console.log(
+                    `❄️ ICE ${socket.data.userId} → ${data.to}`
+                );
+
+                console.log(
+                    `❄️ ¿Existe sala privada destino?`,
+                    io.sockets.adapter.rooms.has(data.to)
+                );
+
                 io.to(data.to).emit('webrtc-ice-candidate', {
                     candidate: data.candidate,
                     from: socket.data.userId,
                 });
+
             } else {
-                console.log(`❄️ [Señalización] Recibido ICE Candidate global de: [${socket.data.userId}] ➡️ Ejecutando broadcast a la sala: call:${data.roomId}`);
-                // Broadcast a toda la sala de videollamada, excepto al emisor
-                socket.to(`call:${data.roomId}`).emit('webrtc-ice-candidate', {
-                    candidate: data.candidate,
-                    from: socket.data.userId,
-                });
+
+                socket.to(`call:${data.roomId}`).emit(
+                    'webrtc-ice-candidate',
+                    {
+                        candidate: data.candidate,
+                        from: socket.data.userId,
+                    }
+                );
             }
         });
-
         // ── 6. Limpieza al desconectar ────────────────────────────────────────────────────
         socket.on('disconnect', () => {
             console.log(`🔌 [WebRTC Backend] Socket desconectado del handler de streaming. ID: ${socket.id}, UID: ${socket.data.userId}`);

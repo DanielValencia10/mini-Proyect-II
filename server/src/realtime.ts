@@ -32,7 +32,7 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true,
   },
-  transports: ['websocket'],
+  transports: ['polling', 'websocket'],
 });
 
 // Middleware de autenticación de Sockets
@@ -79,6 +79,7 @@ io.on('connection', (socket) => {
       console.log(`♻️ [Room] Usuario [${userId}] reconectó dentro del período de gracia. Limpieza cancelada.`);
     }
 
+    socket.data.userName = userName;
     console.log(`🚪 [Room] Usuario '${userName}' (${userId}) se une a la sala: ${roomId}`);
 
     socket.join(roomId);
@@ -133,19 +134,46 @@ io.on('connection', (socket) => {
   });
 
   // ─── Chat ─────────────────────────────────────────────────────────
-  socket.on('send_message', ({ roomId, message }: { roomId: string; message: string }) => {
+  socket.on('send_message', async ({ roomId, message }: { roomId: string; message: string }) => {
     const userId = socket.data.userId;
-    const room = rooms.get(roomId);
-    const participant = room?.get(userId);
-    const author = participant?.name ?? socket.data.name ?? userId ?? 'Anónimo';
 
-    console.log(`💬 [Chat] [${author}] en sala [${roomId}]: "${message}"`);
+    let room = rooms.get(roomId);
+    if (!room) {
+      room = new Map();
+      rooms.set(roomId, room);
+    }
 
-    io.to(roomId).emit('receive_message', {
+    let participant = room.get(userId);
+    if (!participant) {
+      participant = {
+        id: userId,
+        name: socket.data.userName ?? 'Anónimo',
+        speaking: false,
+        camOn: false,
+        micOn: false,
+      };
+      room.set(userId, participant);
+      io.to(roomId).emit('room-participants', Array.from(room.values()));
+      console.log(`🔧 [Chat] Participante [${userId}] reinsertado en sala [${roomId}].`);
+    }
+
+    const author = participant.name;
+    const newMessage = {
       id: Date.now(),
       author,
       text: message,
-    });
+      createdAt: new Date(),
+    };
+
+    try {
+      const { db } = await import('./firebase');
+      await db.collection('rooms').doc(roomId).collection('messages').add(newMessage);
+      console.log(`💾 [Chat] Mensaje guardado en Firestore para sala [${roomId}]`);
+    } catch (err) {
+      console.error('❌ [Chat] Error guardando mensaje en Firestore:', err);
+    }
+
+    io.to(roomId).emit('receive_message', newMessage);
   });
 
   // ─── Desconexión ──────────────────────────────────────────────────
