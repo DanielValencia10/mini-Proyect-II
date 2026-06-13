@@ -31,3 +31,8 @@ export const deleteRoom = async (id: string) => {
     const res = await authFetch(`${BASE_URL}/rooms/${id}`, { method: 'DELETE' })
     return res.json() as Promise<{ success: boolean }>
 }
+
+export const getRoomMessages = async (roomId: string) => {
+    const res = await authFetch(`${BASE_URL}/rooms/${roomId}/messages`)
+    return res.json() as Promise<{ success: boolean; data: { id: string; author: string; text: string }[] }>
+}
