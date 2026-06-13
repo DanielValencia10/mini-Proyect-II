@@ -15,7 +15,6 @@ function Dashboard() {
     const navigate = useNavigate()
     const { userLogged, logout } = useAuthStore()
     const firstName = userLogged?.displayName?.split(' ')[0] ?? 'Estudiante'
-    const username = userLogged?.email?.split('@')[0] ?? ''
     const [avatar, setAvatar] = useState<string | null>(null)
     const [realUsername, setRealUsername] = useState('')
     const { rooms, loading, addRoom, removeRoom } = useRooms(userLogged?.uid ?? '')
