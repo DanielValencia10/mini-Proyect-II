@@ -33,11 +33,32 @@ export function useWebRTC(
 
   const roomIdRef = useRef(roomId);
   const socketRef = useRef(socket);
+  const localStreamRef = useRef(localStream);
 
   useEffect(() => {
     roomIdRef.current = roomId;
     socketRef.current = socket;
+    localStreamRef.current = localStream;
   });
+
+  // ── Re-unirse a la llamada tras reconexión del socket ─────────────
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleReconnect = () => {
+      if (!localStreamRef.current) return;
+      console.log('🔄 [useWebRTC] Socket reconectado. Cerrando PCs antiguos y re-uniéndose a la llamada.');
+      peerConnections.current.forEach((pc) => pc.close());
+      peerConnections.current.clear();
+      setRemoteStreams([]);
+      socket.emit('join-call', { roomId: roomIdRef.current });
+    };
+
+    socket.io.on('reconnect', handleReconnect);
+    return () => {
+      socket.io.off('reconnect', handleReconnect);
+    };
+  }, [socket]);
 
   // ── Creación / recuperación de PeerConnection ─────────────────────
   const createPeerConnection = useCallback(
