@@ -139,6 +139,19 @@ export default function ProfilePage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Si el username cambió pero el blur nunca corrió, verificar ahora antes de guardar
+    if (editForm.username !== profileData.username && usernameAvailable === null) {
+      setCheckingUsername(true)
+      const check = await checkUsernameAvailableForUpdate(editForm.username, userLogged!.uid)
+      setUsernameAvailable(check.available)
+      setCheckingUsername(false)
+      if (!check.available) {
+        setErrors(prev => ({ ...prev, username: 'Este nombre de usuario ya está en uso' }))
+        return
+      }
+    }
+
     if (!validate()) return
 
     setSubmitting(true)
