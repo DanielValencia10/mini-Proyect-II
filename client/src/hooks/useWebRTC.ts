@@ -29,6 +29,7 @@ export function useWebRTC(
   currentUserId: string
 ) {
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([]);
 
   const roomIdRef = useRef(roomId);
@@ -50,6 +51,7 @@ export function useWebRTC(
       console.log('🔄 [useWebRTC] Socket reconectado. Cerrando PCs antiguos y re-uniéndose a la llamada.');
       peerConnections.current.forEach((pc) => pc.close());
       peerConnections.current.clear();
+      pendingCandidates.current.clear();
       setRemoteStreams([]);
       socket.emit('join-call', { roomId: roomIdRef.current });
     };
@@ -64,7 +66,15 @@ export function useWebRTC(
   const createPeerConnection = useCallback(
     (remoteUserId: string) => {
       const existing = peerConnections.current.get(remoteUserId);
-      if (existing) return existing;
+      if (existing) {
+        if (existing.connectionState !== 'failed' && existing.connectionState !== 'closed') {
+          return existing;
+        }
+        existing.close();
+        peerConnections.current.delete(remoteUserId);
+        pendingCandidates.current.delete(remoteUserId);
+        setRemoteStreams((prev) => prev.filter((s) => s.userId !== remoteUserId));
+      }
 
       console.log(`📡 [WebRTC] Creando RTCPeerConnection para: ${remoteUserId}`);
       const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -137,12 +147,28 @@ export function useWebRTC(
   );
 
   // ── Manejadores de señalización ───────────────────────────────────
+  // ── Aplica candidatos ICE en cola tras recibir remote description ───
+  const flushPendingCandidates = useCallback(async (userId: string, pc: RTCPeerConnection) => {
+    const queued = pendingCandidates.current.get(userId);
+    if (!queued?.length) return;
+    pendingCandidates.current.delete(userId);
+    for (const c of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+        console.log(`❄️ [WebRTC] ICE candidato en cola aplicado desde: ${userId}`);
+      } catch (err) {
+        console.error('❌ [WebRTC] Error aplicando ICE candidato en cola:', err);
+      }
+    }
+  }, []);
+
   const handleOffer = useCallback(
     async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
       console.log(`📩 [WebRTC] Oferta recibida desde: ${data.from}`);
       const pc = createPeerConnection(data.from);
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        await flushPendingCandidates(data.from, pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket?.emit('webrtc-answer', { roomId, answer, to: data.from });
@@ -150,7 +176,7 @@ export function useWebRTC(
         console.error('❌ [WebRTC] Error respondiendo a la oferta:', err);
       }
     },
-    [createPeerConnection, roomId, socket]
+    [createPeerConnection, flushPendingCandidates, roomId, socket]
   );
 
   const handleAnswer = useCallback(
@@ -164,6 +190,7 @@ export function useWebRTC(
       try {
         if (pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          await flushPendingCandidates(data.from, pc);
           console.log(`🤝 [WebRTC] Handshake SDP completo con: ${data.from}`);
         } else {
           console.log(`ℹ️ [WebRTC] Ignorando Answer de ${data.from}, estado: ${pc.signalingState}`);
@@ -172,13 +199,20 @@ export function useWebRTC(
         console.error('❌ [WebRTC] Error aplicando respuesta remota:', err);
       }
     },
-    []
+    [flushPendingCandidates]
   );
 
   const handleIceCandidate = useCallback(
     async (data: { from: string; candidate: RTCIceCandidateInit }) => {
       const pc = peerConnections.current.get(data.from);
-      if (!pc) return;
+      if (!pc || !pc.remoteDescription) {
+        // Encolar: el PC aún no tiene remote description
+        const q = pendingCandidates.current.get(data.from) ?? [];
+        q.push(data.candidate);
+        pendingCandidates.current.set(data.from, q);
+        console.log(`⏳ [WebRTC] ICE candidato encolado desde ${data.from} (sin remote description aún)`);
+        return;
+      }
       try {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         console.log(`❄️ [WebRTC] Candidato ICE agregado desde: ${data.from}`);
@@ -202,6 +236,14 @@ export function useWebRTC(
     socket.on('user-joined-call', (data: { userId: string }) => {
       console.log(`👤 [Socket] El usuario ${data.userId} se unió a la llamada.`);
       if (data.userId !== currentUserId) {
+        // Cerrar PC previo (puede existir si el usuario reconectó)
+        const old = peerConnections.current.get(data.userId);
+        if (old) {
+          console.log(`♻️ [WebRTC] Cerrando PC anterior de ${data.userId} antes de reconexión.`);
+          old.close();
+          peerConnections.current.delete(data.userId);
+          setRemoteStreams((prev) => prev.filter((s) => s.userId !== data.userId));
+        }
         createPeerConnection(data.userId);
       }
     });
@@ -222,6 +264,7 @@ export function useWebRTC(
         pc.close();
         peerConnections.current.delete(data.userId);
       }
+      pendingCandidates.current.delete(data.userId);
       setRemoteStreams((prev) => prev.filter((s) => s.userId !== data.userId));
     });
 
