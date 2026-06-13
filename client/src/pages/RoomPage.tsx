@@ -113,7 +113,7 @@ function RoomPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { userLogged } = useAuthStore();
-    const room = useRoom(userLogged?.displayName ?? 'Anónimo');
+    const room = useRoom();
 
     const { participants: socketParticipants, socket } = useSocket(id ?? '');
     const currentUserId = userLogged?.uid ?? '';
