@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Hash, Users, Video } from 'lucide-react';
 import useAuthStore from '../stores/useAuthStore';
+import { getRoomMessages } from '../services/roomService';
 import { useRoom } from '../hooks/useRoom';
 import { useSocket } from '../hooks/useSocket';
 import { useWebRTC } from '../hooks/useWebRTC';
@@ -119,6 +120,7 @@ function RoomPage() {
     const currentUserId = userLogged?.uid ?? '';
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [devicesReady, setDevicesReady] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
     const { remoteStreams, joinCall, leaveCall } = useWebRTC(
@@ -184,6 +186,10 @@ function RoomPage() {
                     // Sin medios disponibles: el usuario entra en modo "solo recibir"
                     setLocalStream(null);
                 }
+            } finally {
+                // Señaliza que el intento de captura terminó (con o sin stream)
+                // para que joinCall pueda emitirse con los tracks ya cargados
+                setDevicesReady(true);
             }
         }
 
@@ -218,11 +224,38 @@ function RoomPage() {
     }, [room.camOn, room.micOn, localStream, socket, id, currentUserId]);
 
     // ── Unirse a la llamada WebRTC ────────────────────────────────────────
+    // Espera a que getUserMedia termine (devicesReady) antes de emitir join-call.
+    // Sin esto, el peer remoto crearía la PC antes de que haya tracks locales.
     useEffect(() => {
-        if (socket) {
+        if (socket && devicesReady) {
             joinCall();
         }
-    }, [socket, joinCall]);
+    }, [socket, devicesReady, joinCall]);
+
+    // ── Historial de chat al entrar ───────────────────────────────────────
+    useEffect(() => {
+        if (!id) return;
+        getRoomMessages(id).then(result => {
+            if (result.success) {
+                setChatMessages(result.data.map(m => ({
+                    id: typeof m.id === 'string' ? parseInt(m.id, 36) : Number(m.id),
+                    author: m.author,
+                    text: m.text,
+                })));
+            }
+        });
+    }, [id]);
+
+    // ── Sala eliminada: navegar al dashboard ─────────────────────────────
+    useEffect(() => {
+        if (!socket) return;
+        const handler = () => {
+            leaveCall();
+            navigate('/dashboard');
+        };
+        socket.on('room-deleted', handler);
+        return () => { socket.off('room-deleted', handler); };
+    }, [socket, leaveCall, navigate]);
 
     // ── Manejo del chat vía socket ────────────────────────────────────────
     useEffect(() => {

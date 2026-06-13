@@ -1,4 +1,5 @@
 import { IncomingMessage, ServerResponse } from 'http'
+import { Server } from 'socket.io'
 import RoomDao, { RoomData } from '../dao/RoomDao'
 
 const dao = new RoomDao()
@@ -23,6 +24,7 @@ export const handleRooms = async (
     res: ServerResponse,
     id?: string,
     uid?: string,
+    io?: Server,
 ): Promise<void> => {
     const url = req.url ?? '/'
 
@@ -65,6 +67,7 @@ export const handleRooms = async (
         if (!existing.success || !existing.data) return send(res, 404, { error: 'Sala no encontrada' })
         if (existing.data.ownerId !== uid) return send(res, 403, { error: 'No tienes permiso para eliminar esta sala' })
         const result = await dao.deleteRoom(id)
+        if (result.success) io?.to(id).emit('room-deleted', { roomId: id })
         return send(res, result.success ? 200 : 500, result)
     }
 
