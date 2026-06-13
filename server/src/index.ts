@@ -233,7 +233,18 @@ io.on('connection', (socket) => {
       id: Date.now(),
       author,
       text: message,
-    });
+      createdAt: new Date(),
+    }
+
+    try {
+      const { db } = await import('./firebase')
+      await db.collection('rooms').doc(roomId).collection('messages').add(newMessage)
+      console.log(`💾 [Chat] Mensaje guardado en Firestore para sala [${roomId}]`)
+    } catch (err) {
+      console.error('❌ [Chat] Error guardando mensaje en Firestore:', err)
+    }
+
+    io.to(roomId).emit('receive_message', newMessage)
   });
 
   // ─── Desconexión Física del Socket ──────────────────────────────────
