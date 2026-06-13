@@ -225,18 +225,12 @@ export default function ProfilePage() {
           <div className="flex justify-center mb-8">
             <div className="w-24 h-24 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden">
               {(isEditing ? editForm.avatar : profileData.avatar) ? (
-                <img
-                  src={isEditing ? editForm.avatar : profileData.avatar}
-                  alt="Avatar"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
+                <img src={isEditing ? editForm.avatar : profileData.avatar} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <User size={48} className="text-primary-500" />
               )}
             </div>
           </div>
-
 
           <form className="space-y-6" onSubmit={handleSave} noValidate>
             {/* Avatar URL */}
