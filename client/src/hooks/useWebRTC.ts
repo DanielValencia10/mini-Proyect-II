@@ -298,14 +298,12 @@ export function useWebRTC(
   // ── Limpieza total al desmontar ───────────────────────────────────
   useEffect(() => {
     console.log('🚀 [useWebRTC] Hook montado.');
+    const pcs = peerConnections.current;
 
     return () => {
       console.log('🔴 useWebRTC DESMONTADO');
 
-      // NO emitir leave-call aquí.
-      // Sólo cerrar conexiones locales.
-
-      peerConnections.current.forEach((pc) => {
+      pcs.forEach((pc) => {
         try {
           pc.close();
         } catch (error) {
@@ -313,7 +311,7 @@ export function useWebRTC(
         }
       });
 
-      peerConnections.current.clear();
+      pcs.clear();
     };
   }, []);
 

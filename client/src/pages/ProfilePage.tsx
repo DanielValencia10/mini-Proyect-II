@@ -465,7 +465,7 @@ export default function ProfilePage() {
       <ConfirmDialog
         open={showDeleteConfirm}
         title="¿Eliminar cuenta?"
-        message="Esta acción es permanente y eliminará todos tus datos. No podrás recuperar tu cuenta."
+        message="Esta acción es irreversible y eliminará todos tus datos. No podrás recuperar tu cuenta."
         confirmLabel="Eliminar permanentemente"
         cancelLabel="Cancelar"
         onConfirm={handleDeleteAccount}

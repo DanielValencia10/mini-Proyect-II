@@ -92,7 +92,7 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
       console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta de salas: ${url}`);
       return;
     }
-    await handleRooms(req, res, roomsMatch[1] || undefined, uid);
+    await handleRooms(req, res, roomsMatch[1] || undefined, uid, io);
     return;
   }
 
@@ -114,7 +114,7 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket']
+  transports: ['polling', 'websocket']
 });
 
 // Middleware de autenticación de Sockets

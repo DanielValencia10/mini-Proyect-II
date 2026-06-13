@@ -60,6 +60,7 @@ export function useSocket(roomId: string) {
                 auth: { token },
                 transports: ['polling', 'websocket'],
                 withCredentials: true,
+                reconnectionAttempts: 5,
             });
 
             socketRef.current = newSocket;
