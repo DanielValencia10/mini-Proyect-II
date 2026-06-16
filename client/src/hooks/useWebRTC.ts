@@ -137,7 +137,19 @@ export function useWebRTC(
     async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
       console.log(`📩 [WebRTC] Oferta recibida desde: ${data.from}`);
       const pc = createPeerConnection(data.from);
+
       try {
+        // Si ya tenemos una oferta local, el de menor ID cede
+        if (pc.signalingState === 'have-local-offer') {
+          const shouldYield = currentUserId < data.from;
+          if (!shouldYield) {
+            console.log(`⚠️ Colisión de ofertas, ignorando oferta de ${data.from}`);
+            return;
+          }
+          // Rollback y aceptar la oferta del otro
+          await pc.setLocalDescription({ type: 'rollback' });
+        }
+
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -146,7 +158,7 @@ export function useWebRTC(
         console.error('❌ [WebRTC] Error respondiendo a la oferta:', err);
       }
     },
-    [createPeerConnection, roomId, socket]
+    [createPeerConnection, roomId, socket, currentUserId]
   );
 
   const handleAnswer = useCallback(
@@ -287,3 +299,5 @@ export function useWebRTC(
 
   return { remoteStreams, joinCall, leaveCall };
 }
+
+
