@@ -2,22 +2,18 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Hash, Users, Video } from 'lucide-react';
 import useAuthStore from '../stores/useAuthStore';
+import { getRoomMessages } from '../services/roomService';
 import { useRoom } from '../hooks/useRoom';
 import { useSocket } from '../hooks/useSocket';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { ParticipantCard } from '../features/room/ParticipantCard';
 import { ChatPanel } from '../features/room/ChatPanel';
 import { RoomControls } from '../features/room/RoomControls';
-import { getRoomMessages } from '../services/roomService'
+
 interface Message {
     id: number;
     author: string;
     text: string;
-}
-
-interface FirestoreMessage {
-    author?: string
-    text?: string
 }
 
 // ─── Utilidad para grid de video ─────────────────────────────────────────────
@@ -118,12 +114,13 @@ function RoomPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { userLogged } = useAuthStore();
-    const room = useRoom()
+    const room = useRoom();
 
     const { participants: socketParticipants, socket } = useSocket(id ?? '');
     const currentUserId = userLogged?.uid ?? '';
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [devicesReady, setDevicesReady] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
     const { remoteStreams, joinCall, leaveCall } = useWebRTC(
@@ -155,14 +152,6 @@ function RoomPage() {
                     audio: true,
                 });
 
-                stream.getAudioTracks().forEach(
-                    t => (t.enabled = room.micOn)
-                );
-
-                stream.getVideoTracks().forEach(
-                    t => (t.enabled = room.camOn)
-                );
-
                 setLocalStream(stream);
                 streamInstance = stream;
 
@@ -176,10 +165,6 @@ function RoomPage() {
                         audio: true,
                     });
 
-                    audioOnlyStream.getAudioTracks().forEach(
-                        t => (t.enabled = room.micOn)
-                    );
-
                     setLocalStream(audioOnlyStream);
                     streamInstance = audioOnlyStream;
 
@@ -189,6 +174,10 @@ function RoomPage() {
                     // Sin medios disponibles: el usuario entra en modo "solo recibir"
                     setLocalStream(null);
                 }
+            } finally {
+                // Señaliza que el intento de captura terminó (con o sin stream)
+                // para que joinCall pueda emitirse con los tracks ya cargados
+                setDevicesReady(true);
             }
         }
 
@@ -223,37 +212,51 @@ function RoomPage() {
     }, [room.camOn, room.micOn, localStream, socket, id, currentUserId]);
 
     // ── Unirse a la llamada WebRTC ────────────────────────────────────────
+    // Espera a que getUserMedia termine (devicesReady) antes de emitir join-call.
+    // Sin esto, el peer remoto crearía la PC antes de que haya tracks locales.
     useEffect(() => {
-        if (socket) {
+        if (socket && devicesReady) {
             joinCall();
         }
-    }, [socket, joinCall]);
+    }, [socket, devicesReady, joinCall]);
 
-    // ── Cargar historial de Firestore al entrar ───────────────────────
+    // ── Historial de chat al entrar ───────────────────────────────────────
     useEffect(() => {
-        if (!id) return
+        if (!id) return;
         getRoomMessages(id).then(result => {
-            const data = (Array.isArray(result.data) ? result.data : Object.values(result.data ?? {})) as FirestoreMessage[]
-            if (result.success && data.length > 0) {
-                setChatMessages(data.map((m: FirestoreMessage, i: number) => ({
-                    id: i + 1,
-                    author: m.author ?? 'Anónimo',
-                    text: m.text ?? '',
-                })))
+            if (result.success) {
+                setChatMessages(result.data.map(m => ({
+                    id: typeof m.id === 'string' ? parseInt(m.id, 36) : Number(m.id),
+                    author: m.author,
+                    text: m.text,
+                })));
             }
-        })
-    }, [id])
+        });
+    }, [id]);
+
+    // ── Sala eliminada: navegar al dashboard ─────────────────────────────
+    useEffect(() => {
+        if (!socket) return;
+        const handler = () => {
+            leaveCall();
+            navigate('/dashboard');
+        };
+        socket.on('room-deleted', handler);
+        return () => { socket.off('room-deleted', handler); };
+    }, [socket, leaveCall, navigate]);
 
     // ── Manejo del chat vía socket ────────────────────────────────────────
     useEffect(() => {
-        if (!socket) return
+        if (!socket) return;
+
         const handler = (msg: Message) =>
-            setChatMessages(prev => [...prev, msg])
-        socket.on('receive_message', handler)
+            setChatMessages(prev => [...prev, msg]);
+        socket.on('receive_message', handler);
+
         return () => {
-            socket.off('receive_message', handler)
-        }
-    }, [socket])
+            socket.off('receive_message', handler);
+        };
+    }, [socket]);
 
     // ── Handlers memorizados ──────────────────────────────────────────────
     const handleSendMessage = useCallback(() => {

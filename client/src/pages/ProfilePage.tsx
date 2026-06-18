@@ -139,6 +139,19 @@ export default function ProfilePage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Si el username cambió pero el blur nunca corrió, verificar ahora antes de guardar
+    if (editForm.username !== profileData.username && usernameAvailable === null) {
+      setCheckingUsername(true)
+      const check = await checkUsernameAvailableForUpdate(editForm.username, userLogged!.uid)
+      setUsernameAvailable(check.available)
+      setCheckingUsername(false)
+      if (!check.available) {
+        setErrors(prev => ({ ...prev, username: 'Este nombre de usuario ya está en uso' }))
+        return
+      }
+    }
+
     if (!validate()) return
 
     setSubmitting(true)
@@ -225,18 +238,12 @@ export default function ProfilePage() {
           <div className="flex justify-center mb-8">
             <div className="w-24 h-24 bg-primary-100 rounded-full flex items-center justify-center overflow-hidden">
               {(isEditing ? editForm.avatar : profileData.avatar) ? (
-                <img
-                  src={isEditing ? editForm.avatar : profileData.avatar}
-                  alt="Avatar"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
+                <img src={isEditing ? editForm.avatar : profileData.avatar} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <User size={48} className="text-primary-500" />
               )}
             </div>
           </div>
-
 
           <form className="space-y-6" onSubmit={handleSave} noValidate>
             {/* Avatar URL */}
@@ -471,7 +478,7 @@ export default function ProfilePage() {
       <ConfirmDialog
         open={showDeleteConfirm}
         title="¿Eliminar cuenta?"
-        message="Esta acción es permanente y eliminará todos tus datos. No podrás recuperar tu cuenta."
+        message="Esta acción es irreversible y eliminará todos tus datos. No podrás recuperar tu cuenta."
         confirmLabel="Eliminar permanentemente"
         cancelLabel="Cancelar"
         onConfirm={handleDeleteAccount}
