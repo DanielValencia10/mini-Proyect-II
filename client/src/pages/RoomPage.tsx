@@ -312,6 +312,7 @@ function RoomPage() {
                         onClose={() => room.setChatOpen(false)}
                         onChange={room.setMessage}
                         onSend={handleSendMessage}
+                        currentUserName={userLogged?.displayName ?? 'Anónimo'}
                     />
                 )}
             </div>
