@@ -4,18 +4,16 @@ import { useEffect, useRef } from 'react'
 const MAX_CHARS = 500
 
 interface Message { id: number; author: string; text: string }
-
 interface Props {
     messages: Message[]
     message: string
     onClose: () => void
     onChange: (v: string) => void
     onSend: () => void
+    currentUserName: string
 }
-
-export function ChatPanel({ messages, message, onClose, onChange, onSend }: Props) {
+export function ChatPanel({ messages, message, onClose, onChange, onSend, currentUserName }: Props) {
     const bottomRef = useRef<HTMLDivElement>(null)
-
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
@@ -40,12 +38,24 @@ export function ChatPanel({ messages, message, onClose, onChange, onSend }: Prop
                 {messages.length === 0 ? (
                     <p className="text-gray-500 text-sm text-center mt-4">¡No hay mensajes aún!</p>
                 ) : (
-                    messages.map(m => (
-                        <div key={m.id}>
-                            <p className="text-cyan-400 text-xs font-medium">{m.author}</p>
-                            <p className="text-gray-300 text-sm mt-0.5">{m.text}</p>
-                        </div>
-                    ))
+                    messages.map((m, i) => {
+                        const isMine = m.author === currentUserName
+                        return (
+                            <div key={`${m.id}-${i}`} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+                                <p className={`text-xs font-medium ${isMine ? 'text-cyan-400' : 'text-gray-400'}`}>
+                                    {isMine ? 'Tú' : m.author}
+                                </p>
+                                <div
+                                    className={`mt-0.5 max-w-[85%] rounded-xl px-3 py-2 text-sm ${isMine
+                                        ? 'bg-cyan-500 text-gray-950'
+                                        : 'bg-gray-800 text-gray-200'
+                                        }`}
+                                >
+                                    {m.text}
+                                </div>
+                            </div>
+                        )
+                    })
                 )}
                 <div ref={bottomRef} />
             </div>
