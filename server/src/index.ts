@@ -21,6 +21,9 @@ interface Participant {
 // Mapa de salas: roomId -> Map<userId, Participant>
 const rooms = new Map<string, Map<string, Participant>>();
 
+// Timers de gracia: userId -> timeout. Evita emitir user-left-call en reconexiones breves.
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 // ── Servidor HTTP ───────────────────────────────────────────────────
 const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
   res.setHeader('Access-Control-Allow-Origin', CLIENT_ORIGIN);
@@ -55,43 +58,42 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 
   if (url.startsWith('/users')) {
-    const uid = await verifyToken(req, res)
+    const uid = await verifyToken(req, res);
     if (!uid) {
-      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta: ${url}`)
-      return
+      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta: ${url}`);
+      return;
     }
-    await handleUsers(req, res, url.slice('/users'.length) || '')
-    return
+    await handleUsers(req, res, url.slice('/users'.length) || '');
+    return;
   }
 
-  const messagesMatch = url.match(/^\/rooms\/([^/?]+)\/messages$/)
+  const messagesMatch = url.match(/^\/rooms\/([^/?]+)\/messages$/);
   if (messagesMatch) {
-    const uid = await verifyToken(req, res)
-    if (!uid) return
+    const uid = await verifyToken(req, res);
+    if (!uid) return;
     try {
-      const { db } = await import('./firebase')
+      const { db } = await import('./firebase');
       const snap = await db.collection('rooms').doc(messagesMatch[1])
-        .collection('messages').orderBy('createdAt', 'asc').limit(100).get()
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ success: true, data: msgs }))
+        .collection('messages').orderBy('createdAt', 'asc').limit(100).get();
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, data: msgs }));
     } catch {
-      res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ success: false, data: [] }))
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, data: [] }));
     }
-    return
+    return;
   }
 
-
-  const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/)
+  const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/);
   if (roomsMatch) {
-    const uid = await verifyToken(req, res)
+    const uid = await verifyToken(req, res);
     if (!uid) {
-      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta de salas: ${url}`)
-      return
+      console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta de salas: ${url}`);
+      return;
     }
-    await handleRooms(req, res, roomsMatch[1] || undefined, uid)
-    return
+    await handleRooms(req, res, roomsMatch[1] || undefined, uid, io);
+    return;
   }
 
   if (url.startsWith('/api-docs')) {
@@ -113,14 +115,13 @@ const io = new Server(httpServer, {
     credentials: true
   },
   transports: ['polling', 'websocket']
-
 });
 
 // Middleware de autenticación de Sockets
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   console.log(`🔒 [Socket Auth] Verificando handshake inicial para el socket: ${socket.id}`);
-
+  
   if (!token) {
     console.error(`❌ [Socket Auth] Conexión denegada: No se proporcionó Token en el socket ${socket.id}`);
     return next(new Error('Token no proporcionado'));
@@ -148,6 +149,16 @@ io.on('connection', (socket) => {
     if (!userId) {
       console.warn(`⚠️ [Room] Intento de join-room sin userId válido en socket: ${socket.id}`);
       return;
+    }
+
+    socket.data.name = userName;
+
+    // Cancelar limpieza pendiente si el usuario se reconectó antes de que expirara la gracia
+    const pendingTimer = disconnectTimers.get(userId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      disconnectTimers.delete(userId);
+      console.log(`♻️ [Room] Usuario [${userId}] reconectó dentro del período de gracia. Limpieza cancelada.`);
     }
 
     console.log(`🚪 [Room] Usuario '${userName}' (${userId}) solicita unirse a la sala de chat: ${roomId}`);
@@ -245,7 +256,6 @@ io.on('connection', (socket) => {
       createdAt: new Date(),
     }
 
-    // Guardar en Firestore
     try {
       const { db } = await import('./firebase')
       await db.collection('rooms').doc(roomId).collection('messages').add(newMessage)
@@ -255,31 +265,39 @@ io.on('connection', (socket) => {
     }
 
     io.to(roomId).emit('receive_message', newMessage)
-  })
+  });
+
   // ─── Desconexión Física del Socket ──────────────────────────────────
   socket.on('disconnect', () => {
     const userId = socket.data.userId;
     console.log(`🔴 [Socket Event] Socket desconectado físicamente: ${socket.id}, userId vinculado: ${userId}`);
     if (!userId) return;
-    console.log(`Socket desconectado: ${socket.id}, userId: ${userId}`);
 
+    // Guardar salas afectadas ANTES de borrar al usuario
+    const affectedRooms: string[] = [];
     rooms.forEach((participants, roomId) => {
       if (participants.has(userId)) {
-        console.log(`🧹 [CleanUp] Removiendo rastro del usuario [${userId}] de la sala [${roomId}] por desconexión.`);
+        affectedRooms.push(roomId);
         participants.delete(userId);
-
-        // Forzar el aviso de WebRTC desde aquí
-        io.to(roomId).emit('user-left-call', { userId });
-
         if (participants.size === 0) {
-          console.log(`🗑️ [CleanUp] Sala [${roomId}] vacía tras desconexión abrupta. Eliminando mapa.`);
           rooms.delete(roomId);
         } else {
-          // 3. Notificamos la lista actualizada de participantes
           io.to(roomId).emit('room-participants', Array.from(participants.values()));
         }
+        console.log(`🧹 [CleanUp] Usuario [${userId}] removido de sala [${roomId}]. room-participants actualizado.`);
       }
     });
+
+    // Diferir user-left-call 8 s: si reconecta antes, join-room cancela el timer
+    const timer = setTimeout(() => {
+      disconnectTimers.delete(userId);
+      console.log(`⏰ [CleanUp] Gracia expirada para [${userId}]. Emitiendo user-left-call a ${affectedRooms.length} sala(s).`);
+      affectedRooms.forEach(roomId => {
+        io.to(roomId).emit('user-left-call', { userId });
+      });
+    }, 8000);
+
+    disconnectTimers.set(userId, timer);
   });
 });
 

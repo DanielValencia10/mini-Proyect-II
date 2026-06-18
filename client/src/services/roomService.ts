@@ -6,7 +6,7 @@ export interface RoomData {
     id: string
     name: string
     ownerId: string
-    participants: number
+    participants: string[]
 }
 
 export const getRoomsByOwner = async (ownerId: string) => {
@@ -27,12 +27,27 @@ export const createRoom = async (room: RoomData) => {
     return res.json() as Promise<{ success: boolean }>
 }
 
+export const updateRoom = async (id: string, fields: { name?: string }) => {
+    const res = await authFetch(`${BASE_URL}/rooms/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(fields),
+    })
+    return res.json() as Promise<{ success: boolean }>
+}
+
 export const deleteRoom = async (id: string) => {
     const res = await authFetch(`${BASE_URL}/rooms/${id}`, { method: 'DELETE' })
     return res.json() as Promise<{ success: boolean }>
 }
 
+export interface MessageData {
+    id: string
+    author: string
+    text: string
+    createdAt: { _seconds: number } | string
+}
+
 export const getRoomMessages = async (roomId: string) => {
     const res = await authFetch(`${BASE_URL}/rooms/${roomId}/messages`)
-    return res.json() as Promise<{ success: boolean; data: { id: string; author: string; text: string }[] }>
+    return res.json() as Promise<{ success: boolean; data: MessageData[] }>
 }
