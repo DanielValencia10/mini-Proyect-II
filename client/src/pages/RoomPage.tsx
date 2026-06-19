@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Hash, Users, Video } from 'lucide-react';
 import useAuthStore from '../stores/useAuthStore';
@@ -123,12 +123,108 @@ function RoomPage() {
     const [devicesReady, setDevicesReady] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
+    // ── Estados de Permisos ─────────────────────────────────────────────────
+    const [cameraPermission, setCameraPermission] = useState<'granted' | 'denied' | 'unavailable' | 'prompt'>('prompt');
+    const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'unavailable' | 'prompt'>('prompt');
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
+    const [modalPermissionType, setModalPermissionType] = useState<'camera' | 'mic' | 'both'>('both');
+
+    const localStreamRef = useRef<MediaStream | null>(null);
+
+    // Sincronizar referencia del stream local para limpiezas futuras
+    useEffect(() => {
+        localStreamRef.current = localStream;
+    }, [localStream]);
+
+    // Detener de forma limpia el stream anterior
+    const stopLocalStream = useCallback(() => {
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((track: MediaStreamTrack) => {
+                track.stop();
+                console.log(`🛑 Track local detenido: ${track.kind}`);
+            });
+            localStreamRef.current = null;
+        }
+        setLocalStream(null);
+    }, []);
+
+    const { setMicOn, setCamOn } = room;
+
+    // ── Captura e inicialización de dispositivos ──────────────────────────
+    const initDevices = useCallback(async () => {
+        stopLocalStream();
+        setDevicesReady(false);
+
+        let streamInstance: MediaStream | null = null;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true,
+            });
+
+            setLocalStream(stream);
+            localStreamRef.current = stream;
+            streamInstance = stream;
+            setCameraPermission('granted');
+            setMicPermission('granted');
+            setMicOn(true);
+            setCamOn(true);
+            setShowPermissionModal(false);
+        } catch (err: any) {
+            console.error('Error accediendo a periféricos (video+audio):', err);
+            const isCamDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+            setCameraPermission(isCamDenied ? 'denied' : 'unavailable');
+            setCamOn(false);
+
+            // Fallback: intentar solo con audio
+            try {
+                const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
+                    video: false,
+                    audio: true,
+                });
+
+                setLocalStream(audioOnlyStream);
+                localStreamRef.current = audioOnlyStream;
+                streamInstance = audioOnlyStream;
+                setMicPermission('granted');
+                setMicOn(true);
+                setShowPermissionModal(false);
+                console.warn('⚠️ Continuando sin video: solo se obtuvo audio.');
+            } catch (audioErr: any) {
+                console.error('Error accediendo a periféricos (solo audio):', audioErr);
+                const isMicDenied = audioErr.name === 'NotAllowedError' || audioErr.name === 'PermissionDeniedError';
+                setMicPermission(isMicDenied ? 'denied' : 'unavailable');
+                setMicOn(false);
+            }
+        } finally {
+            setDevicesReady(true);
+        }
+        return streamInstance;
+    }, [setMicOn, setCamOn, stopLocalStream]);
+
+    // Inicializar dispositivos al cargar
+    useEffect(() => {
+        initDevices();
+        return () => {
+            stopLocalStream();
+        };
+    }, [initDevices, stopLocalStream]);
+
     const { remoteStreams, joinCall, leaveCall } = useWebRTC(
         id ?? '',
         localStream,
         socket,
         currentUserId
     );
+
+    // ── Reiniciar WebRTC si cambia el stream (ej. se recuperan permisos) ─
+    useEffect(() => {
+        if (devicesReady && localStream && socket) {
+            console.log('🔄 [RoomPage] localStream actualizado tras cambio de permisos. Reiniciando conexión WebRTC.');
+            leaveCall();
+            joinCall();
+        }
+    }, [localStream, devicesReady, socket, leaveCall, joinCall]);
 
     // ── Memoización de derivados ───────────────────────────────────────────
     const remotePeers = useMemo(
@@ -140,56 +236,6 @@ function RoomPage() {
         () => remotePeers.length + (localStream ? 1 : 0),
         [remotePeers, localStream]
     );
-
-    // ── Efecto: captura de dispositivos locales ────────────────────────────
-    useEffect(() => {
-        let streamInstance: MediaStream | null = null;
-
-        async function initDevices() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: true,
-                });
-
-                setLocalStream(stream);
-                streamInstance = stream;
-
-            } catch (err) {
-                console.error('Error accediendo a periféricos (video+audio):', err);
-
-                // Fallback: intentar solo con audio (p.ej. cámara ya en uso por otra app/pestaña)
-                try {
-                    const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
-                        video: false,
-                        audio: true,
-                    });
-
-                    setLocalStream(audioOnlyStream);
-                    streamInstance = audioOnlyStream;
-
-                    console.warn('⚠️ Continuando sin video: solo se obtuvo audio.');
-                } catch (audioErr) {
-                    console.error('Error accediendo a periféricos (solo audio):', audioErr);
-                    // Sin medios disponibles: el usuario entra en modo "solo recibir"
-                    setLocalStream(null);
-                }
-            } finally {
-                // Señaliza que el intento de captura terminó (con o sin stream)
-                // para que joinCall pueda emitirse con los tracks ya cargados
-                setDevicesReady(true);
-            }
-        }
-
-        initDevices();
-
-        return () => {
-            streamInstance?.getTracks().forEach(track => track.stop());
-
-            // NO llamar leaveCall aquí
-            // leaveCall();
-        };
-    }, [id]);
 
     // ── Sincronización de pista de audio ───────────────────────────────────
     useEffect(() => {
@@ -272,6 +318,25 @@ function RoomPage() {
         navigate('/dashboard');
     }, [leaveCall, localStream, navigate]);
 
+    // ── Handlers de Permisos ─────────────────────────────────────────────
+    const handleToggleMic = useCallback(() => {
+        if (micPermission === 'denied' || micPermission === 'unavailable') {
+            setModalPermissionType(cameraPermission === 'denied' || cameraPermission === 'unavailable' ? 'both' : 'mic');
+            setShowPermissionModal(true);
+            return;
+        }
+        room.setMicOn(v => !v);
+    }, [micPermission, cameraPermission, room]);
+
+    const handleToggleCam = useCallback(() => {
+        if (cameraPermission === 'denied' || cameraPermission === 'unavailable') {
+            setModalPermissionType(micPermission === 'denied' || micPermission === 'unavailable' ? 'both' : 'camera');
+            setShowPermissionModal(true);
+            return;
+        }
+        room.setCamOn(v => !v);
+    }, [cameraPermission, micPermission, room]);
+
     // ── Render ────────────────────────────────────────────────────────────
     return (
         <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden select-none">
@@ -293,6 +358,38 @@ function RoomPage() {
                     <span>{totalPersonas} participantes</span>
                 </div>
             </header>
+
+            {/* Banner de alerta de permisos si están bloqueados */}
+            {(cameraPermission === 'denied' || micPermission === 'denied') && (
+                <div className="bg-red-950/80 border-b border-red-900/40 px-4 py-2 sm:px-6 flex items-center justify-between text-xs sm:text-sm text-red-200 z-30 transition-all">
+                    <div className="flex items-center gap-2">
+                        <span className="p-1 bg-red-900/50 rounded-full">🛡️</span>
+                        <span>
+                            {cameraPermission === 'denied' && micPermission === 'denied'
+                                ? 'El acceso a la cámara y al micrófono está bloqueado por tu navegador.'
+                                : cameraPermission === 'denied'
+                                ? 'El acceso a la cámara está bloqueado por tu navegador.'
+                                : 'El acceso al micrófono está bloqueado por tu navegador.'}{' '}
+                            Para que los demás puedan verte y escucharte, habilita los permisos.
+                        </span>
+                    </div>
+                    <button
+                        onClick={() => {
+                            setModalPermissionType(
+                                cameraPermission === 'denied' && micPermission === 'denied'
+                                    ? 'both'
+                                    : cameraPermission === 'denied'
+                                    ? 'camera'
+                                    : 'mic'
+                            );
+                            setShowPermissionModal(true);
+                        }}
+                        className="ml-4 shrink-0 px-3 py-1 bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-medium rounded-lg transition-all shadow-sm"
+                    >
+                        Configurar
+                    </button>
+                </div>
+            )}
 
             {/* Área principal: video + chat */}
             <div className="flex flex-1 overflow-hidden min-h-0 relative">
@@ -325,11 +422,120 @@ function RoomPage() {
                 micOn={room.micOn}
                 camOn={room.camOn}
                 chatOpen={room.chatOpen}
-                onToggleMic={() => room.setMicOn(v => !v)}
-                onToggleCam={() => room.setCamOn(v => !v)}
+                onToggleMic={handleToggleMic}
+                onToggleCam={handleToggleCam}
                 onToggleChat={() => room.setChatOpen(v => !v)}
                 onLeave={handleLeaveRoom}
+                micPermission={micPermission}
+                camPermission={cameraPermission}
             />
+
+            {/* Modal de Permisos */}
+            <PermissionModal
+                isOpen={showPermissionModal}
+                type={modalPermissionType}
+                onClose={() => setShowPermissionModal(false)}
+                onRetry={initDevices}
+            />
+        </div>
+    );
+}
+
+// ─── Componente Modal de Permisos ──────────────────────────────────────────
+interface PermissionModalProps {
+    isOpen: boolean;
+    type: 'camera' | 'mic' | 'both';
+    onClose: () => void;
+    onRetry: () => void;
+}
+
+function PermissionModal({ isOpen, type, onClose, onRetry }: PermissionModalProps) {
+    if (!isOpen) return null;
+
+    const title = type === 'camera'
+        ? 'Acceso a la cámara bloqueado'
+        : type === 'mic'
+        ? 'Acceso al micrófono bloqueado'
+        : 'Acceso a cámara y micrófono bloqueado';
+
+    const description = type === 'camera'
+        ? 'StudyRoom necesita acceder a tu cámara para que los demás participantes puedan verte.'
+        : type === 'mic'
+        ? 'StudyRoom necesita acceder a tu micrófono para que los demás participantes puedan escucharte.'
+        : 'StudyRoom necesita acceder a tu cámara y micrófono para que los demás participantes puedan verte y escucharte.';
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop con desenfoque de fondo */}
+            <div
+                className="absolute inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+                onClick={onClose}
+            />
+
+            {/* Contenedor del Modal */}
+            <div className="relative bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-md w-full mx-auto shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200 text-left">
+                {/* Icono de advertencia */}
+                <div className="flex justify-center">
+                    <div className="bg-red-500/10 text-red-500 p-3.5 rounded-full border border-red-500/20">
+                        <svg className="w-8 h-8 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
+                </div>
+
+                {/* Cabecera */}
+                <div className="space-y-2 text-center">
+                    <h3 className="text-xl font-bold text-white tracking-wide">
+                        {title}
+                    </h3>
+                    <p className="text-sm text-gray-400 leading-relaxed">
+                        {description}
+                    </p>
+                </div>
+
+                {/* Instrucciones de solución */}
+                <div className="bg-gray-950/60 rounded-xl p-4 border border-gray-800/80 text-xs sm:text-sm text-gray-300 space-y-3">
+                    <p className="font-semibold text-cyan-400">¿Cómo habilitar los permisos?</p>
+                    <p className="text-xs text-gray-400">
+                        Por seguridad, el navegador no permite que el sitio web fuerce la solicitud si ya la has denegado. Debes habilitarla manualmente:
+                    </p>
+                    <ol className="list-decimal pl-4 space-y-2 text-gray-400">
+                        <li>
+                            Busca en la barra de direcciones (donde dice la URL de la página):
+                            <ul className="list-disc pl-4 mt-1 space-y-1 text-gray-300">
+                                <li>
+                                    <strong>A la izquierda:</strong> Haz clic en el ícono de configuración/ajustes <span className="text-white font-mono bg-gray-800 px-1 py-0.5 rounded">🎛️</span>, información <span className="text-white font-mono bg-gray-800 px-1.5 py-0.5 rounded">ⓘ</span> o candado <span className="text-white font-mono bg-gray-800 px-1 py-0.5 rounded">🔒</span> y activa los permisos de cámara/micrófono.
+                                </li>
+                                <li>
+                                    <strong>A la derecha (dentro de la barra):</strong> Si ves un ícono de cámara o micrófono con una cruz roja <span className="text-red-400 font-bold">📹❌</span>, haz clic en él y selecciona "Permitir siempre".
+                                </li>
+                            </ul>
+                        </li>
+                        <li>
+                            Una vez que los cambies a <span className="text-green-400 font-semibold">Permitir</span>, haz clic en <span className="font-semibold text-white">Volver a intentar</span> abajo.
+                        </li>
+                    </ol>
+                </div>
+
+                {/* Botones de acción */}
+                <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+                    <button
+                        onClick={onClose}
+                        className="w-full sm:order-1 py-2.5 px-4 bg-gray-800 hover:bg-gray-700 active:bg-gray-950 text-gray-300 font-semibold rounded-xl transition-all border border-gray-700/50"
+                    >
+                        Cerrar
+                    </button>
+                    <button
+                        onClick={onRetry}
+                        className="w-full sm:order-2 py-2.5 px-4 bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-gray-950 font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center justify-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18v3z" />
+                        </svg>
+                        Volver a intentar
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
