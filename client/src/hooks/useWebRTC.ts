@@ -205,7 +205,7 @@ export function useWebRTC(
         console.error('❌ [WebRTC] Error respondiendo a la oferta:', err);
       }
     },
-    [createPeerConnection, flushPendingCandidates, roomId, socket]
+    [createPeerConnection, currentUserId, flushPendingCandidates, roomId, socket]
   );
 
   const handleAnswer = useCallback(

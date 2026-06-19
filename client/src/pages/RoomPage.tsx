@@ -170,9 +170,10 @@ function RoomPage() {
             setMicOn(true);
             setCamOn(true);
             setShowPermissionModal(false);
-        } catch (err: any) {
+        } catch (err) {
             console.error('Error accediendo a periféricos (video+audio):', err);
-            const isCamDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+            const errorName = err instanceof Error ? err.name : '';
+            const isCamDenied = errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError';
             setCameraPermission(isCamDenied ? 'denied' : 'unavailable');
             setCamOn(false);
 
@@ -190,9 +191,10 @@ function RoomPage() {
                 setMicOn(true);
                 setShowPermissionModal(false);
                 console.warn('⚠️ Continuando sin video: solo se obtuvo audio.');
-            } catch (audioErr: any) {
+            } catch (audioErr) {
                 console.error('Error accediendo a periféricos (solo audio):', audioErr);
-                const isMicDenied = audioErr.name === 'NotAllowedError' || audioErr.name === 'PermissionDeniedError';
+                const errorName = audioErr instanceof Error ? audioErr.name : '';
+                const isMicDenied = errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError';
                 setMicPermission(isMicDenied ? 'denied' : 'unavailable');
                 setMicOn(false);
             }
@@ -467,9 +469,11 @@ function PermissionModal({ isOpen, type, onClose, onRetry }: PermissionModalProp
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop con desenfoque de fondo */}
-            <div
-                className="absolute inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+            <button
+                className="absolute inset-0 bg-black/75 backdrop-blur-sm transition-opacity w-full h-full border-0 cursor-default"
                 onClick={onClose}
+                aria-label="Cerrar modal"
+                type="button"
             />
 
             {/* Contenedor del Modal */}
