@@ -21,6 +21,9 @@ interface Participant {
 // Mapa de salas: roomId -> Map<userId, Participant>
 const rooms = new Map<string, Map<string, Participant>>();
 
+// Timers de gracia: userId -> timeout. Evita emitir user-left-call en reconexiones breves.
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 // ── Servidor HTTP ───────────────────────────────────────────────────
 const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
   res.setHeader('Access-Control-Allow-Origin', CLIENT_ORIGIN);
@@ -55,7 +58,8 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 
   if (url.startsWith('/users')) {
-    if (!await verifyToken(req, res)) {
+    const uid = await verifyToken(req, res);
+    if (!uid) {
       console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta: ${url}`);
       return;
     }
@@ -63,13 +67,32 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return;
   }
 
+  const messagesMatch = url.match(/^\/rooms\/([^/?]+)\/messages$/);
+  if (messagesMatch) {
+    const uid = await verifyToken(req, res);
+    if (!uid) return;
+    try {
+      const { db } = await import('./firebase');
+      const snap = await db.collection('rooms').doc(messagesMatch[1])
+        .collection('messages').orderBy('createdAt', 'asc').limit(100).get();
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, data: msgs }));
+    } catch {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, data: [] }));
+    }
+    return;
+  }
+
   const roomsMatch = url.match(/^\/rooms\/?([^/?]*)/);
   if (roomsMatch) {
-    if (!await verifyToken(req, res)) {
+    const uid = await verifyToken(req, res);
+    if (!uid) {
       console.warn(`🔒 [HTTP Auth] Token rechazado o ausente en ruta de salas: ${url}`);
       return;
     }
-    await handleRooms(req, res, roomsMatch[1] || undefined);
+    await handleRooms(req, res, roomsMatch[1] || undefined, uid, io);
     return;
   }
 
@@ -91,7 +114,7 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket']
+  transports: ['polling', 'websocket']
 });
 
 // Middleware de autenticación de Sockets
@@ -128,8 +151,18 @@ io.on('connection', (socket) => {
       return;
     }
 
+    socket.data.name = userName;
+
+    // Cancelar limpieza pendiente si el usuario se reconectó antes de que expirara la gracia
+    const pendingTimer = disconnectTimers.get(userId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      disconnectTimers.delete(userId);
+      console.log(`♻️ [Room] Usuario [${userId}] reconectó dentro del período de gracia. Limpieza cancelada.`);
+    }
+
     console.log(`🚪 [Room] Usuario '${userName}' (${userId}) solicita unirse a la sala de chat: ${roomId}`);
-    
+    socket.data.userName = userName;
     socket.join(roomId);
     socket.join(userId); // Sala personal vital para señalización WebRTC individual
     console.log(`🔗 [Room] Socket ${socket.id} mapeado a sala '${roomId}' y a su canal privado '${userId}'`);
@@ -173,7 +206,7 @@ io.on('connection', (socket) => {
 
     console.log(`🚪 [Room] El usuario (${userId}) está abandonando la sala: ${roomId}`);
     socket.leave(roomId);
-    socket.leave(userId);
+
 
     const room = rooms.get(roomId);
     if (room) {
@@ -190,19 +223,48 @@ io.on('connection', (socket) => {
   });
 
   // ─── Chat ─────────────────────────────────────────────────────────
-  socket.on('send_message', ({ roomId, message }: { roomId: string; message: string }) => {
-    const userId = socket.data.userId;
-    const room = rooms.get(roomId);
-    const participant = room?.get(userId);
-    const author = participant?.name ?? userId ?? 'Anónimo';
+  socket.on('send_message', async ({ roomId, message }: { roomId: string; message: string }) => {
+    const userId = socket.data.userId
 
-    console.log(`💬 [Chat] Mensaje recibido de [${author}] en sala [${roomId}]: "${message}"`);
+    let room = rooms.get(roomId)
+    if (!room) {
+      room = new Map()
+      rooms.set(roomId, room)
+    }
 
-    io.to(roomId).emit('receive_message', {
+    let participant = room.get(userId)
+    if (!participant) {
+      // El usuario quedó fuera del mapa de la sala (join-call sin join-room previo).
+      // Lo reinsertamos para que tenga nombre correcto y aparezca en la lista.
+      participant = {
+        id: userId,
+        name: socket.data.userName ?? 'Anónimo',
+        speaking: false,
+        camOn: false,
+        micOn: false,
+      }
+      room.set(userId, participant)
+      io.to(roomId).emit('room-participants', Array.from(room.values()))
+      console.log(`🔧 [Chat] Participante [${userId}] reinsertado en la sala [${roomId}] (faltaba tras reconexión).`)
+    }
+
+    const author = participant.name
+    const newMessage = {
       id: Date.now(),
       author,
       text: message,
-    });
+      createdAt: new Date(),
+    }
+
+    try {
+      const { db } = await import('./firebase')
+      await db.collection('rooms').doc(roomId).collection('messages').add(newMessage)
+      console.log(`💾 [Chat] Mensaje guardado en Firestore para sala [${roomId}]`)
+    } catch (err) {
+      console.error('❌ [Chat] Error guardando mensaje en Firestore:', err)
+    }
+
+    io.to(roomId).emit('receive_message', newMessage)
   });
 
   // ─── Desconexión Física del Socket ──────────────────────────────────
@@ -210,25 +272,32 @@ io.on('connection', (socket) => {
     const userId = socket.data.userId;
     console.log(`🔴 [Socket Event] Socket desconectado físicamente: ${socket.id}, userId vinculado: ${userId}`);
     if (!userId) return;
-    console.log(`Socket desconectado: ${socket.id}, userId: ${userId}`);
 
+    // Guardar salas afectadas ANTES de borrar al usuario
+    const affectedRooms: string[] = [];
     rooms.forEach((participants, roomId) => {
       if (participants.has(userId)) {
-        console.log(`🧹 [CleanUp] Removiendo rastro del usuario [${userId}] de la sala [${roomId}] por desconexión.`);
+        affectedRooms.push(roomId);
         participants.delete(userId);
-
-        // Forzar el aviso de WebRTC desde aquí
-        io.to(roomId).emit('user-left-call', { userId });
-
         if (participants.size === 0) {
-          console.log(`🗑️ [CleanUp] Sala [${roomId}] vacía tras desconexión abrupta. Eliminando mapa.`);
           rooms.delete(roomId);
         } else {
-          // 3. Notificamos la lista actualizada de participantes
           io.to(roomId).emit('room-participants', Array.from(participants.values()));
         }
+        console.log(`🧹 [CleanUp] Usuario [${userId}] removido de sala [${roomId}]. room-participants actualizado.`);
       }
     });
+
+    // Diferir user-left-call 8 s: si reconecta antes, join-room cancela el timer
+    const timer = setTimeout(() => {
+      disconnectTimers.delete(userId);
+      console.log(`⏰ [CleanUp] Gracia expirada para [${userId}]. Emitiendo user-left-call a ${affectedRooms.length} sala(s).`);
+      affectedRooms.forEach(roomId => {
+        io.to(roomId).emit('user-left-call', { userId });
+      });
+    }, 8000);
+
+    disconnectTimers.set(userId, timer);
   });
 });
 

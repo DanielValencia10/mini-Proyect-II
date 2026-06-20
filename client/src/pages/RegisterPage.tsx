@@ -88,6 +88,19 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Si el username no fue verificado aún (usuario no salió del campo), verificar ahora
+    if (form.username.trim() && usernameAvailable === null) {
+      setCheckingUsername(true)
+      const check = await checkUsernameAvailable(form.username)
+      setUsernameAvailable(check.available)
+      setCheckingUsername(false)
+      if (!check.available) {
+        setErrors(prev => ({ ...prev, username: 'Este nombre de usuario ya está en uso' }))
+        return
+      }
+    }
+
     if (!validate()) return
     setSubmitting(true)
     const result = await registerWithEmail(form)

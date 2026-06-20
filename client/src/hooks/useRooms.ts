@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getRoomsByOwner, createRoom, deleteRoom, RoomData } from '../services/roomService'
+import { getRoomsByOwner, createRoom, updateRoom, deleteRoom, RoomData } from '../services/roomService'
 
 function generateId() {
     return Math.random().toString(36).substring(2, 8).toUpperCase()
@@ -21,9 +21,15 @@ export function useRooms(ownerId: string) {
     useEffect(() => { fetchRooms() }, [fetchRooms])
 
     const addRoom = async (name: string) => {
-        const room: RoomData = { id: generateId(), name, ownerId, participants: 1 }
+        const room: RoomData = { id: generateId(), name, ownerId, participants: [ownerId] }
         const { success } = await createRoom(room)
         if (success) setRooms(prev => [...prev, room])
+        return success
+    }
+
+    const renameRoom = async (id: string, name: string) => {
+        const { success } = await updateRoom(id, { name })
+        if (success) setRooms(prev => prev.map(r => r.id === id ? { ...r, name } : r))
         return success
     }
 
@@ -33,5 +39,5 @@ export function useRooms(ownerId: string) {
         return success
     }
 
-    return { rooms, loading, error, addRoom, removeRoom, refetch: fetchRooms }
+    return { rooms, loading, error, addRoom, renameRoom, removeRoom, refetch: fetchRooms }
 }

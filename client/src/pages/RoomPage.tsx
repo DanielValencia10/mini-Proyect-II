@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Hash, Users, Video } from 'lucide-react';
 import useAuthStore from '../stores/useAuthStore';
+import { getRoomMessages } from '../services/roomService';
 import { useRoom } from '../hooks/useRoom';
 import { useSocket } from '../hooks/useSocket';
 import { useWebRTC } from '../hooks/useWebRTC';
@@ -39,11 +40,6 @@ function VideoGrid({
     totalPersonas,
 }: VideoGridProps) {
     // Render helpers
-    const getPeerStream = (peerId: string, peerCamOn: boolean) => {
-        if (!peerCamOn) return null;
-        return remoteStreams.find(s => s.userId === peerId)?.stream ?? null;
-    };
-
     const renderLocalCard = (className?: string) => {
         const streamParaMiCard = camOn ? localStream : null;
 
@@ -63,7 +59,8 @@ function VideoGrid({
             key={peer.id}
             name={peer.name}
             speaking={peer.speaking}
-            stream={getPeerStream(peer.id, peer.camOn)}
+            stream={remoteStreams.find(s => s.userId === peer.id)?.stream ?? null}
+            camOn={peer.camOn}
             isLocal={false}
         />
     );
@@ -117,13 +114,13 @@ function RoomPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { userLogged } = useAuthStore();
-    const room = useRoom(userLogged?.displayName ?? 'Anónimo');
+    const room = useRoom();
 
-    // isConnected es un estado real → los useEffect reaccionan cuando el socket se conecta
-    const { participants: socketParticipants, socket, isConnected } = useSocket(id ?? '');
+    const { participants: socketParticipants, socket } = useSocket(id ?? '');
     const currentUserId = userLogged?.uid ?? '';
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [devicesReady, setDevicesReady] = useState(false);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
     const { remoteStreams, joinCall, leaveCall } = useWebRTC(
@@ -155,13 +152,32 @@ function RoomPage() {
                     audio: true,
                 });
 
-                stream.getAudioTracks().forEach(t => (t.enabled = room.micOn));
-                stream.getVideoTracks().forEach(t => (t.enabled = room.camOn));
-
                 setLocalStream(stream);
                 streamInstance = stream;
+
             } catch (err) {
-                console.error('Error accediendo a periféricos:', err);
+                console.error('Error accediendo a periféricos (video+audio):', err);
+
+                // Fallback: intentar solo con audio (p.ej. cámara ya en uso por otra app/pestaña)
+                try {
+                    const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
+                        video: false,
+                        audio: true,
+                    });
+
+                    setLocalStream(audioOnlyStream);
+                    streamInstance = audioOnlyStream;
+
+                    console.warn('⚠️ Continuando sin video: solo se obtuvo audio.');
+                } catch (audioErr) {
+                    console.error('Error accediendo a periféricos (solo audio):', audioErr);
+                    // Sin medios disponibles: el usuario entra en modo "solo recibir"
+                    setLocalStream(null);
+                }
+            } finally {
+                // Señaliza que el intento de captura terminó (con o sin stream)
+                // para que joinCall pueda emitirse con los tracks ya cargados
+                setDevicesReady(true);
             }
         }
 
@@ -169,9 +185,10 @@ function RoomPage() {
 
         return () => {
             streamInstance?.getTracks().forEach(track => track.stop());
-            leaveCall();
+
+            // NO llamar leaveCall aquí
+            // leaveCall();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
     // ── Sincronización de pista de audio ───────────────────────────────────
@@ -181,7 +198,7 @@ function RoomPage() {
 
     // ── Sincronización de pista de video y notificación al socket ────────
     useEffect(() => {
-        if (!localStream || !isConnected) return;
+        if (!localStream) return;
         localStream.getVideoTracks().forEach(track => (track.enabled = room.camOn));
 
         if (socket && id) {
@@ -192,39 +209,62 @@ function RoomPage() {
                 micOn: room.micOn,
             });
         }
-    }, [room.camOn, room.micOn, localStream, socket, id, currentUserId, isConnected]);
+    }, [room.camOn, room.micOn, localStream, socket, id, currentUserId]);
 
-    // ── Unirse a la llamada WebRTC cuando socket Y stream estén listos ────
+    // ── Unirse a la llamada WebRTC ────────────────────────────────────────
+    // Espera a que getUserMedia termine (devicesReady) antes de emitir join-call.
+    // Sin esto, el peer remoto crearía la PC antes de que haya tracks locales.
     useEffect(() => {
-        if (socket && localStream && isConnected) {
+        if (socket && devicesReady) {
             joinCall();
         }
-    }, [socket, localStream, isConnected, joinCall]);
+    }, [socket, devicesReady, joinCall]);
+
+    // ── Historial de chat al entrar ───────────────────────────────────────
+    useEffect(() => {
+        if (!id) return;
+        getRoomMessages(id).then(result => {
+            if (result.success) {
+                setChatMessages(result.data.map(m => ({
+                    id: typeof m.id === 'string' ? parseInt(m.id, 36) : Number(m.id),
+                    author: m.author,
+                    text: m.text,
+                })));
+            }
+        });
+    }, [id]);
+
+    // ── Sala eliminada: navegar al dashboard ─────────────────────────────
+    useEffect(() => {
+        if (!socket) return;
+        const handler = () => {
+            leaveCall();
+            navigate('/dashboard');
+        };
+        socket.on('room-deleted', handler);
+        return () => { socket.off('room-deleted', handler); };
+    }, [socket, leaveCall, navigate]);
 
     // ── Manejo del chat vía socket ────────────────────────────────────────
-    // isConnected garantiza que este efecto se re-ejecuta cuando el socket
-    // está realmente conectado (no solo cuando la referencia existe)
     useEffect(() => {
-        if (!socket || !isConnected) return;
+        if (!socket) return;
 
-        console.log('💬 [RoomPage] Registrando listener de chat (socket conectado)');
         const handler = (msg: Message) =>
             setChatMessages(prev => [...prev, msg]);
-
         socket.on('receive_message', handler);
 
         return () => {
             socket.off('receive_message', handler);
         };
-    }, [socket, isConnected]); // ← isConnected como dependencia
+    }, [socket]);
 
     // ── Handlers memorizados ──────────────────────────────────────────────
     const handleSendMessage = useCallback(() => {
         const text = room.message.trim();
-        if (!text || !socket || !isConnected) return;
+        if (!text || !socket) return;
         socket.emit('send_message', { roomId: id, message: text });
         room.setMessage('');
-    }, [room, socket, id, isConnected]);
+    }, [room, socket, id]);
 
     const handleLeaveRoom = useCallback(() => {
         leaveCall();
@@ -275,6 +315,7 @@ function RoomPage() {
                         onClose={() => room.setChatOpen(false)}
                         onChange={room.setMessage}
                         onSend={handleSendMessage}
+                        currentUserName={userLogged?.displayName ?? 'Anónimo'}
                     />
                 )}
             </div>

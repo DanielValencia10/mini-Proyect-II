@@ -1,4 +1,5 @@
 import { IncomingMessage, ServerResponse } from 'http'
+import { Server } from 'socket.io'
 import RoomDao, { RoomData } from '../dao/RoomDao'
 
 const dao = new RoomDao()
@@ -22,6 +23,8 @@ export const handleRooms = async (
     req: IncomingMessage,
     res: ServerResponse,
     id?: string,
+    uid?: string,
+    io?: Server,
 ): Promise<void> => {
     const url = req.url ?? '/'
 
@@ -50,6 +53,9 @@ export const handleRooms = async (
 
     // PUT /rooms/:id
     if (req.method === 'PUT' && id) {
+        const existing = await dao.getRoomById(id)
+        if (!existing.success || !existing.data) return send(res, 404, { error: 'Sala no encontrada' })
+        if (existing.data.ownerId !== uid) return send(res, 403, { error: 'No tienes permiso para modificar esta sala' })
         const body = await parseBody(req) as Partial<Omit<RoomData, 'id' | 'ownerId'>>
         const result = await dao.updateRoom(id, body)
         return send(res, result.success ? 200 : 500, result)
@@ -57,7 +63,11 @@ export const handleRooms = async (
 
     // DELETE /rooms/:id
     if (req.method === 'DELETE' && id) {
+        const existing = await dao.getRoomById(id)
+        if (!existing.success || !existing.data) return send(res, 404, { error: 'Sala no encontrada' })
+        if (existing.data.ownerId !== uid) return send(res, 403, { error: 'No tienes permiso para eliminar esta sala' })
         const result = await dao.deleteRoom(id)
+        if (result.success) io?.to(id).emit('room-deleted', { roomId: id })
         return send(res, result.success ? 200 : 500, result)
     }
 
