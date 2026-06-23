@@ -16,6 +16,7 @@ interface Participant {
   speaking: boolean;
   camOn: boolean;
   micOn: boolean;
+  sharing: boolean;
 }
 
 // Mapa de salas: roomId -> Map<userId, Participant>
@@ -182,6 +183,7 @@ io.on('connection', (socket) => {
       speaking: false,
       camOn: false,
       micOn: false,
+      sharing: false,
     });
 
     const participantList = Array.from(rooms.get(roomId)!.values());
@@ -190,7 +192,7 @@ io.on('connection', (socket) => {
   });
 
   // ─── Actualizar estado multimedia ─────────────────────────────────
-  socket.on('update-media-state', ({ roomId, camOn, micOn }: { roomId: string; camOn: boolean; micOn: boolean }) => {
+  socket.on('update-media-state', ({ roomId, camOn, micOn, sharing }: { roomId: string; camOn: boolean; micOn: boolean; sharing?: boolean }) => {
     const userId = socket.data.userId;
     const room = rooms.get(roomId);
     if (!room) return;
@@ -199,7 +201,8 @@ io.on('connection', (socket) => {
     if (participant) {
       participant.camOn = camOn;
       participant.micOn = micOn;
-      console.log(`📸 [Media] Estado actualizado para [${participant.name}]: Cam: ${camOn}, Mic: ${micOn}`);
+      if (sharing !== undefined) participant.sharing = sharing;
+      console.log(`📸 [Media] Estado actualizado para [${participant.name}]: Cam: ${camOn}, Mic: ${micOn}, Sharing: ${participant.sharing}`);
       io.to(roomId).emit('room-participants', Array.from(room.values()));
     }
   });
@@ -247,6 +250,7 @@ io.on('connection', (socket) => {
         speaking: false,
         camOn: false,
         micOn: false,
+        sharing: false,
       }
       room.set(userId, participant)
       io.to(roomId).emit('room-participants', Array.from(room.values()))
