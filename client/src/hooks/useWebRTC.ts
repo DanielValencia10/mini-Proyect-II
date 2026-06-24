@@ -27,7 +27,6 @@ export function useWebRTC(
   localStream: MediaStream | null,
   socket: Socket | null,
   currentUserId: string,
-  remoteUserId?: number,
 ) {
   // Al inicio de tu hook useWebRTC
   const makingOffer = useRef<Map<string, boolean>>(new Map());
@@ -54,10 +53,10 @@ export function useWebRTC(
   const localStreamRef = useRef(localStream);
 
   useEffect(() => {
-  roomIdRef.current = roomId;
-  socketRef.current = socket;
-  localStreamRef.current = localStream;
-}, [roomId, socket, localStream]); 
+    roomIdRef.current = roomId;
+    socketRef.current = socket;
+    localStreamRef.current = localStream;
+  }, [roomId, socket, localStream]);
 
   // ── Re-unirse a la llamada tras reconexión del socket ─────────────
   useEffect(() => {
@@ -431,11 +430,10 @@ export function useWebRTC(
     });
   }, []);
 
-
   // ── Suscripción a eventos del socket (ÚNICO useEffect de listeners) ─
   useEffect(() => {
     if (!socket) return;
-
+  const pcs = peerConnections.current;
     console.log("🔌 [useWebRTC] Registrando listeners de WebRTC.");
 
     socket.on("webrtc-offer", handleOffer);
@@ -517,15 +515,14 @@ export function useWebRTC(
       socket.off("existing-call-participants");
       socket.off("user-left-call");
       socket.off("force-stop-screen-share");
-
-      // 🔥 LIMPIEZA ABSOLUTA DE HARDWARE FANTASMA:
-      // Al desmontar cerramos de raíz todas las PeerConnections abiertas del render anterior
-      peerConnections.current.forEach((pc) => {
+      
+      pcs.forEach((pc) => {
         if (pc.signalingState !== "closed") {
           pc.close();
         }
       });
-      peerConnections.current.clear();
+
+      pcs.clear();
     };
   }, [
     socket,
@@ -534,7 +531,7 @@ export function useWebRTC(
     handleAnswer,
     handleIceCandidate,
     handleScreenShareStopped,
-    callUser, // 💡 Nota: Asegúrate de que callUser esté envuelta en un useCallback estable en tu hook
+    callUser,
   ]);
 
   // ── Limpieza total al desmontar ───────────────────────────────────
