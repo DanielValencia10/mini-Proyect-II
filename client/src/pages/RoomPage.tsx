@@ -61,11 +61,15 @@ function ScreenVideo({
     if (!el) return;
     el.srcObject = stream;
     el.play().catch((err) => {
-      console.warn("⚠️ [ScreenVideo] Fallo al reproducir, reintentando...", err);
+      console.warn(
+        "⚠️ [ScreenVideo] Fallo al reproducir, reintentando...",
+        err,
+      );
     });
   }, [stream]);
 
   return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption
     <video
       ref={ref}
       autoPlay
@@ -100,7 +104,11 @@ function VideoGrid({
     const screens: ActiveScreen[] = [];
 
     if (screenStream) {
-      screens.push({ ownerId: currentUserId || "local-screen", stream: screenStream, isLocal: true });
+      screens.push({
+        ownerId: currentUserId || "local-screen",
+        stream: screenStream,
+        isLocal: true,
+      });
     }
 
     for (const [ownerId, stream] of remoteScreenStreams.entries()) {
@@ -109,7 +117,11 @@ function VideoGrid({
       // como local también, evitando duplicarlo con la entrada de screenStream.
       if (ownerId === "local-screen") {
         if (!screenStream) {
-          screens.push({ ownerId: currentUserId || "local-screen", stream, isLocal: true });
+          screens.push({
+            ownerId: currentUserId || "local-screen",
+            stream,
+            isLocal: true,
+          });
         }
         continue;
       }
@@ -123,15 +135,21 @@ function VideoGrid({
   const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
-    const stillExists = activeScreens.some((s) => s.ownerId === selectedOwnerId);
+    const stillExists = activeScreens.some(
+      (s) => s.ownerId === selectedOwnerId,
+    );
     if (!stillExists) {
       setSelectedOwnerId(activeScreens[0]?.ownerId ?? null);
     }
   }, [activeScreens, selectedOwnerId]);
 
   const mainScreen =
-    activeScreens.find((s) => s.ownerId === selectedOwnerId) ?? activeScreens[0] ?? null;
-  const otherScreens = activeScreens.filter((s) => s.ownerId !== mainScreen?.ownerId);
+    activeScreens.find((s) => s.ownerId === selectedOwnerId) ??
+    activeScreens[0] ??
+    null;
+  const otherScreens = activeScreens.filter(
+    (s) => s.ownerId !== mainScreen?.ownerId,
+  );
 
   const getOwnerName = (ownerId: string, isLocal: boolean) => {
     if (isLocal) return "Tú";
@@ -197,7 +215,10 @@ function VideoGrid({
                   className="relative w-40 aspect-video flex-shrink-0 rounded-lg overflow-hidden border-2 border-gray-700 hover:border-cyan-500 transition-colors"
                   title={`Ver pantalla de ${getOwnerName(screen.ownerId, screen.isLocal)} en grande`}
                 >
-                  <ScreenVideo stream={screen.stream} className="w-full h-full object-cover" />
+                  <ScreenVideo
+                    stream={screen.stream}
+                    className="w-full h-full object-cover"
+                  />
                   <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[11px] px-1.5 py-0.5 rounded">
                     {getOwnerName(screen.ownerId, screen.isLocal)}
                   </span>
@@ -297,6 +318,7 @@ function RoomPage() {
   const [micPermission, setMicPermission] = useState<
     "granted" | "denied" | "unavailable" | "prompt"
   >("prompt");
+
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [modalPermissionType, setModalPermissionType] = useState<
     "camera" | "mic" | "both"
@@ -397,12 +419,13 @@ function RoomPage() {
     };
   }, [initDevices, stopLocalStream]);
 
-  const { remoteStreams, remoteScreenStreams, joinCall, leaveCall, startScreenShare } = useWebRTC(
-    id ?? "",
-    localStream,
-    socket,
-    currentUserId,
-  );
+  const {
+    remoteStreams,
+    remoteScreenStreams,
+    joinCall,
+    leaveCall,
+    startScreenShare,
+  } = useWebRTC(id ?? "", localStream, socket, currentUserId);
 
   // ── Reiniciar WebRTC si cambia el stream (ej. se recuperan permisos) ─
   useEffect(() => {
@@ -599,7 +622,7 @@ function RoomPage() {
         });
 
         console.log("🖥️ [RoomPage] Pantalla capturada con éxito:", stream.id);
-        
+
         // Guardamos en los estados de la página inmediatamente
         setScreenStream(stream);
         screenStreamRef.current = stream;
@@ -607,18 +630,19 @@ function RoomPage() {
 
         // Enviamos el stream al hook useWebRTC para que lo transmita a los peers
         // Nota: Si tu startScreenShare actual no acepta parámetros, pasa el stream dentro de una función o adáptalo.
-        await startScreenShare(stream); 
+        await startScreenShare(stream);
 
         // Escuchar el botón nativo de "Dejar de compartir" de Chrome/Firefox
         stream.getVideoTracks()[0].onended = () => {
-          console.log("🖥️ [Browser] Compartir pantalla finalizado de forma nativa.");
-          stream.getTracks().forEach(t => t.stop());
+          console.log(
+            "🖥️ [Browser] Compartir pantalla finalizado de forma nativa.",
+          );
+          stream.getTracks().forEach((t) => t.stop());
           socket.emit("stop-screen-share", { roomId: id });
           setScreenStream(null);
           screenStreamRef.current = null;
           setRoomScreenSharing(false);
         };
-
       } catch (err) {
         console.error("❌ Error al capturar pantalla en la UI:", err);
         socket.emit("stop-screen-share", { roomId: id });
@@ -701,6 +725,7 @@ function RoomPage() {
               camOn={room.camOn}
               totalPersonas={totalPersonas}
               screenStream={screenStream}
+              currentUserId={currentUserId}
             />
           </div>
         </main>
@@ -731,6 +756,16 @@ function RoomPage() {
         micPermission={micPermission}
         camPermission={cameraPermission}
       />
+
+      <PermissionModal
+        isOpen={showPermissionModal}
+        type={modalPermissionType}
+        onClose={() => setShowPermissionModal(false)}
+        onRetry={() => {
+          setShowPermissionModal(false);
+          initDevices();
+        }}
+      />
     </div>
   );
 }
@@ -742,7 +777,7 @@ interface PermissionModalProps {
   onClose: () => void;
   onRetry: () => void;
 }
-
+// eslint-disable-next-line no-unused-vars
 function PermissionModal({
   isOpen,
   type,
