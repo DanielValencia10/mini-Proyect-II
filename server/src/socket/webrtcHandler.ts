@@ -12,12 +12,31 @@ interface RTCIceCandidateInit {
     usernameFragment?: string | null;
 }
 
+/**
+ * registerWebRTCHandlers
+ * ----------------------
+ * Registra en la instancia de Socket.io todos los eventos necesarios para:
+ *  1. Gestionar la presencia de un usuario dentro de una llamada (join-call / leave-call).
+ *  2. Retransmitir la señalización WebRTC entre pares (Offer, Answer, ICE Candidates).
+ *
+ * Patrón de salas usado:
+ *  - `socket.data.userId`        → sala privada 1:1 por usuario (se usa como "buzón" para
+ *                                   mensajes dirigidos a un peer específico mediante `to`).
+ *  - `call:${roomId}`            → sala de llamada anidada dentro de una sala de chat;
+ *                                   agrupa a todos los participantes que tienen su
+ *                                   cámara/micrófono activos en esa sala.
+ *
+ * @param io Instancia global de Socket.io del servidor.
+ */
 export function registerWebRTCHandlers(io: Server) {
     io.on('connection', (socket: Socket) => {
         console.log(
             `🔌 [registerWebRTCHandlers] Socket conectado. ID: ${socket.id}, UID: ${socket.data.userId}`
         );
 
+        // Cada socket se une automáticamente a su propia "sala privada" (su userId).
+        // Esto permite enviarle mensajes dirigidos (Offer/Answer/ICE) sin necesidad
+        // de mantener un mapa manual de userId -> socket.id.
         if (socket.data.userId) {
             socket.join(socket.data.userId);
 
@@ -29,7 +48,29 @@ export function registerWebRTCHandlers(io: Server) {
                 `⚠️ [WebRTC Backend] socket.data.userId viene vacío`
             );
         }
-        // ── 1. Cuando un usuario activa su cámara/micrófono ─────────────────────────────
+
+        /**
+         * Evento: join-call
+         * ------------------
+         * Dirección: Cliente → Servidor
+         * Se dispara cuando un usuario activa su cámara/micrófono y entra a la
+         * llamada de una sala específica.
+         *
+         * Efectos:
+         *  1. Une el socket a la sala anidada `call:${roomId}`.
+         *  2. Notifica a los participantes ya presentes en la llamada (evento
+         *     `user-joined-call`), excluyendo al emisor.
+         *  3. Responde al propio emisor con la lista de participantes que ya
+         *     estaban en la llamada (evento `existing-call-participants`), para
+         *     que el cliente sepa con quién debe iniciar la negociación WebRTC
+         *     (normalmente, el que llega de último envía la Offer a cada uno de
+         *     los participantes existentes).
+         *
+         * @param payload.roomId  ID de la sala de chat a la que pertenece la llamada.
+         *
+         * @emits user-joined-call            → a `call:${roomId}` (excepto al emisor). Payload: { userId }
+         * @emits existing-call-participants  → al propio emisor. Payload: { userIds: string[] }
+         */
         socket.on('join-call', ({ roomId }: { roomId: string }) => {
             const userId = socket.data.userId;
             console.log(`📞 [WebRTC Backend] Usuario [${userId}] solicitó entrar a la llamada de la sala [${roomId}].`);
@@ -67,7 +108,22 @@ export function registerWebRTCHandlers(io: Server) {
             );
         });
 
-        // ── 2. Abandonar llamada voluntariamente ──────────────────────────────────────────
+        /**
+         * Evento: leave-call
+         * -------------------
+         * Dirección: Cliente → Servidor
+         * Se dispara cuando un usuario abandona voluntariamente la llamada
+         * (por ejemplo, al apagar su cámara/micrófono o salir de la sala).
+         *
+         * Efectos:
+         *  1. Saca al socket de la sala anidada `call:${roomId}`.
+         *  2. Notifica a los demás participantes de la sala (evento `user-left-call`)
+         *     para que limpien la conexión P2P y el video correspondientes a este usuario.
+         *
+         * @param payload.roomId  ID de la sala de chat/llamada que se abandona.
+         *
+         * @emits user-left-call → a `roomId`. Payload: { userId }
+         */
         socket.on('leave-call', ({ roomId }: { roomId: string }) => {
             const userId = socket.data.userId;
             console.log(`🚪 [WebRTC Backend] El usuario [${userId}] abandonó voluntariamente la llamada de la sala [${roomId}].`);
@@ -78,7 +134,23 @@ export function registerWebRTCHandlers(io: Server) {
             });
         });
 
-        // ── 3. Señalización WebRTC - OFERTA ───────────────────────────────────────────────
+        /**
+         * Evento: webrtc-offer
+         * ----------------------
+         * Dirección: Cliente → Servidor → Cliente destino
+         * Primer paso de la negociación WebRTC. El cliente que origina la
+         * llamada genera una Oferta SDP (`RTCSessionDescriptionInit` de tipo
+         * "offer") y la envía dirigida a un peer específico mediante su `userId`.
+         *
+         * El servidor actúa como simple repetidor (relay): no interpreta ni
+         * modifica el SDP, solo lo retransmite a la sala privada del destinatario.
+         *
+         * @param payload.roomId  ID de la sala de chat/llamada (informativo).
+         * @param payload.offer   Descripción de sesión SDP tipo "offer".
+         * @param payload.to      userId del peer destinatario de la oferta.
+         *
+         * @emits webrtc-offer → a la sala privada `data.to`. Payload: { offer, from: userId }
+         */
         socket.on('webrtc-offer', (data: {
             roomId: string;
             offer: RTCSessionDescriptionInit;
@@ -99,7 +171,24 @@ export function registerWebRTCHandlers(io: Server) {
                 from: socket.data.userId,
             });
         });
-        // ── 4. Señalización WebRTC - RESPUESTA ────────────────────────────────────────────
+
+        /**
+         * Evento: webrtc-answer
+         * ------------------------
+         * Dirección: Cliente → Servidor → Cliente destino
+         * Segundo paso de la negociación WebRTC. El cliente que recibió la
+         * Oferta responde con una Respuesta SDP (`RTCSessionDescriptionInit`
+         * de tipo "answer"), dirigida de vuelta al emisor original mediante `to`.
+         *
+         * Igual que con la oferta, el servidor solo retransmite el mensaje
+         * sin modificarlo.
+         *
+         * @param payload.roomId  ID de la sala de chat/llamada (informativo).
+         * @param payload.answer  Descripción de sesión SDP tipo "answer".
+         * @param payload.to      userId del peer que originó la oferta.
+         *
+         * @emits webrtc-answer → a la sala privada `data.to`. Payload: { answer, from: userId }
+         */
         socket.on('webrtc-answer', (data: {
             roomId: string;
             answer: RTCSessionDescriptionInit;
@@ -121,7 +210,31 @@ export function registerWebRTCHandlers(io: Server) {
             });
         });
 
-        // ── 5. Señalización WebRTC - CANDIDATOS ICE ───────────────────────────────────────
+        /**
+         * Evento: webrtc-ice-candidate
+         * -------------------------------
+         * Dirección: Cliente → Servidor → Cliente(s) destino
+         * Tercer paso (continuo) de la negociación WebRTC. Cada vez que el
+         * navegador descubre una nueva ruta de red posible (candidato ICE:
+         * host, srflx o relay), la envía al/los peer(s) correspondientes para
+         * que intenten establecer la conexión P2P directa.
+         *
+         * Este evento soporta dos modos de entrega:
+         *  - Dirigido (`data.to` presente): se envía únicamente a la sala
+         *    privada de ese userId. Se usa en llamadas 1:1 o cuando ya se
+         *    conoce el peer exacto con el que se está negociando.
+         *  - Broadcast a la llamada (`data.to` ausente): se envía a todos los
+         *    sockets de `call:${data.roomId}` excepto al emisor. Útil en
+         *    escenarios de múltiples participantes donde aún no se ha fijado
+         *    una negociación 1:1 explícita.
+         *
+         * @param payload.roomId     ID de la sala de chat/llamada.
+         * @param payload.candidate  Candidato ICE generado por el navegador.
+         * @param payload.to         (opcional) userId del peer destinatario.
+         *
+         * @emits webrtc-ice-candidate → a `data.to` (si existe) o a `call:${data.roomId}` (broadcast).
+         *                               Payload: { candidate, from: userId }
+         */
         socket.on('webrtc-ice-candidate', (data: {
             roomId: string;
             candidate: RTCIceCandidateInit;
@@ -155,7 +268,21 @@ export function registerWebRTCHandlers(io: Server) {
                 );
             }
         });
-        // ── 6. Limpieza al desconectar ────────────────────────────────────────────────────
+
+        /**
+         * Evento: disconnect
+         * --------------------
+         * Dirección: Cliente → Servidor (automático)
+         * Disparado automáticamente por Socket.io cuando el socket se
+         * desconecta (cierre de pestaña, pérdida de red, etc.).
+         *
+         * NOTA: este handler solo registra el log de desconexión. La limpieza
+         * de la sala de llamada (`call:${roomId}`) y la notificación
+         * `user-left-call` a los demás participantes NO se realiza aquí
+         * automáticamente; si se requiere ese comportamiento ante una
+         * desconexión abrupta (no solo `leave-call` voluntario), debe
+         * agregarse explícitamente en este handler.
+         */
         socket.on('disconnect', () => {
             console.log(`🔌 [WebRTC Backend] Socket desconectado del handler de streaming. ID: ${socket.id}, UID: ${socket.data.userId}`);
         });
