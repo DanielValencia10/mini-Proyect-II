@@ -24,25 +24,123 @@ function getGridClass(count: number): string {
 }
 
 // ─── Subcomponente para las diferentes distribuciones de video ─────────────
+
 interface VideoGridProps {
   remotePeers: ReturnType<typeof useSocket>["participants"];
   remoteStreams: ReturnType<typeof useWebRTC>["remoteStreams"];
+  remoteScreenStreams: ReturnType<typeof useWebRTC>["remoteScreenStreams"];
   localStream: MediaStream | null;
   camOn: boolean;
   totalPersonas: number;
+  screenStream?: MediaStream | null;
+  /** userId del propio usuario, para poder distinguir "tu pantalla" de las demás. */
+  currentUserId: string;
+}
+
+type ActiveScreen = {
+  ownerId: string;
+  stream: MediaStream;
+  isLocal: boolean;
+};
+
+// ── Subcomponente: un <video> que se auto-conecta a su MediaStream ────────
+// Reutilizable tanto para la pantalla grande como para las miniaturas.
+function ScreenVideo({
+  stream,
+  className,
+  muted = true,
+}: {
+  stream: MediaStream;
+  className?: string;
+  muted?: boolean;
+}) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.srcObject = stream;
+    el.play().catch((err) => {
+      console.warn("⚠️ [ScreenVideo] Fallo al reproducir, reintentando...", err);
+    });
+  }, [stream]);
+
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted={muted}
+      className={className ?? "w-full h-full object-contain"}
+    />
+  );
 }
 
 function VideoGrid({
-  remotePeers,
-  remoteStreams,
+  remotePeers = [],
+  remoteStreams = [],
+  remoteScreenStreams = new Map(),
   localStream,
   camOn,
   totalPersonas,
+  screenStream,
+  currentUserId,
 }: VideoGridProps) {
+  useEffect(() => {
+    if (remoteStreams) {
+      console.log("🔍 [DEBUG WebRTC] remoteStreams actuales:", remoteStreams);
+    }
+    if (screenStream) {
+      console.log("🖥️ [DEBUG WebRTC] screenStream actual:", screenStream);
+    }
+  }, [screenStream, remoteStreams]);
+
+  // ── 1. Recolectar TODAS las pantallas activas (la propia + las remotas) ──
+  const activeScreens: ActiveScreen[] = useMemo(() => {
+    const screens: ActiveScreen[] = [];
+
+    if (screenStream) {
+      screens.push({ ownerId: currentUserId || "local-screen", stream: screenStream, isLocal: true });
+    }
+
+    for (const [ownerId, stream] of remoteScreenStreams.entries()) {
+      // 'local-screen' es un identificador interno que algunos flujos usan para
+      // marcar el stream propio dentro del mismo Map; si aparece, lo tratamos
+      // como local también, evitando duplicarlo con la entrada de screenStream.
+      if (ownerId === "local-screen") {
+        if (!screenStream) {
+          screens.push({ ownerId: currentUserId || "local-screen", stream, isLocal: true });
+        }
+        continue;
+      }
+      screens.push({ ownerId, stream, isLocal: false });
+    }
+
+    return screens;
+  }, [screenStream, remoteScreenStreams, currentUserId]);
+
+  // ── 2. Cuál pantalla se muestra en grande (el usuario puede elegir si hay varias) ──
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const stillExists = activeScreens.some((s) => s.ownerId === selectedOwnerId);
+    if (!stillExists) {
+      setSelectedOwnerId(activeScreens[0]?.ownerId ?? null);
+    }
+  }, [activeScreens, selectedOwnerId]);
+
+  const mainScreen =
+    activeScreens.find((s) => s.ownerId === selectedOwnerId) ?? activeScreens[0] ?? null;
+  const otherScreens = activeScreens.filter((s) => s.ownerId !== mainScreen?.ownerId);
+
+  const getOwnerName = (ownerId: string, isLocal: boolean) => {
+    if (isLocal) return "Tú";
+    return remotePeers.find((p) => p.id === ownerId)?.name || "Participante";
+  };
+
   // Render helpers
   const renderLocalCard = (className?: string) => {
     const streamParaMiCard = camOn ? localStream : null;
-
     return (
       <ParticipantCard
         name="Tú"
@@ -54,16 +152,83 @@ function VideoGrid({
     );
   };
 
-  const renderRemoteCard = (peer: (typeof remotePeers)[number]) => (
-    <ParticipantCard
-      key={peer.id}
-      name={peer.name}
-      speaking={peer.speaking}
-      stream={remoteStreams.find((s) => s.userId === peer.id)?.stream ?? null}
-      camOn={peer.camOn}
-      isLocal={false}
-    />
-  );
+  const renderRemoteCard = (peer: (typeof remotePeers)[number]) => {
+    const cameraStream =
+      remoteStreams.find((s) => s.userId === peer.id)?.stream ?? null;
+    return (
+      <ParticipantCard
+        key={peer.id}
+        name={peer.name}
+        speaking={peer.speaking}
+        stream={cameraStream}
+        camOn={peer.camOn}
+        isLocal={false}
+      />
+    );
+  };
+
+  // ==========================================
+  // CASO ESPECIAL: UNA O MÁS PERSONAS COMPARTEN PANTALLA
+  // ==========================================
+  if (mainScreen) {
+    return (
+      <div className="flex flex-col lg:flex-row gap-4 w-full h-full max-w-7xl items-stretch">
+        {/* Columna principal: pantalla grande + miniaturas de otras pantallas (si hay más de una) */}
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          <div className="flex-1 min-h-[300px] bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
+            <ScreenVideo stream={mainScreen.stream} />
+            <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-md text-sm">
+              Pantalla de {getOwnerName(mainScreen.ownerId, mainScreen.isLocal)}
+            </div>
+            {activeScreens.length > 1 && (
+              <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-md text-xs">
+                {activeScreens.length} pantallas compartidas
+              </div>
+            )}
+          </div>
+
+          {/* Miniaturas de las demás pantallas activas, clicables para ponerlas en grande */}
+          {otherScreens.length > 0 && (
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {otherScreens.map((screen) => (
+                <button
+                  key={screen.ownerId}
+                  onClick={() => setSelectedOwnerId(screen.ownerId)}
+                  className="relative w-40 aspect-video flex-shrink-0 rounded-lg overflow-hidden border-2 border-gray-700 hover:border-cyan-500 transition-colors"
+                  title={`Ver pantalla de ${getOwnerName(screen.ownerId, screen.isLocal)} en grande`}
+                >
+                  <ScreenVideo stream={screen.stream} className="w-full h-full object-cover" />
+                  <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[11px] px-1.5 py-0.5 rounded">
+                    {getOwnerName(screen.ownerId, screen.isLocal)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar con cámaras de todos los presentes (independiente de quién comparte pantalla) */}
+        <div className="w-full lg:w-72 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-y-auto p-1 flex-shrink-0">
+          <div className="w-48 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md">
+            {renderLocalCard("w-full h-full object-cover")}
+          </div>
+
+          {remotePeers.map((peer) => (
+            <div
+              key={peer.id}
+              className="w-48 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md"
+            >
+              {renderRemoteCard(peer)}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // ESCENARIOS NORMALES (SOLO CÁMARAS, NADIE COMPARTE PANTALLA)
+  // ==========================================
 
   // Caso 1: cargando
   if (remotePeers.length === 0 && !localStream) {
@@ -83,7 +248,7 @@ function VideoGrid({
     );
   }
 
-  // Caso 3: 1 user → pantalla completa + PiP
+  // Caso 3: 1 user remoto → pantalla completa + PiP
   if (remotePeers.length === 1) {
     const peer = remotePeers[0];
     return (
@@ -98,7 +263,7 @@ function VideoGrid({
     );
   }
 
-  // Caso 4: ≥ 2 users → grid
+  // Caso 4: ≥ 2 users → grid normal de cámaras
   return (
     <div
       className={`grid ${getGridClass(totalPersonas)} gap-4 w-full h-full max-w-6xl items-center justify-center`}
@@ -123,6 +288,8 @@ function RoomPage() {
   const [devicesReady, setDevicesReady] = useState(false);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+
   // ── Estados de Permisos ─────────────────────────────────────────────────
   const [cameraPermission, setCameraPermission] = useState<
     "granted" | "denied" | "unavailable" | "prompt"
@@ -136,6 +303,7 @@ function RoomPage() {
   >("both");
 
   const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
 
   // Sincronizar referencia del stream local para limpiezas futuras
   useEffect(() => {
@@ -154,7 +322,12 @@ function RoomPage() {
     setLocalStream(null);
   }, []);
 
-  const { setMicOn, setCamOn } = room;
+  const {
+    setMicOn,
+    setCamOn,
+    setScreenSharing: setRoomScreenSharing,
+    screenSharing,
+  } = room;
 
   // ── Captura e inicialización de dispositivos ──────────────────────────
   const initDevices = useCallback(async () => {
@@ -217,12 +390,14 @@ function RoomPage() {
   // Inicializar dispositivos al cargar
   useEffect(() => {
     initDevices();
+
     return () => {
       stopLocalStream();
+      screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [initDevices, stopLocalStream]);
 
-  const { remoteStreams, joinCall, leaveCall } = useWebRTC(
+  const { remoteStreams, remoteScreenStreams, joinCall, leaveCall, startScreenShare } = useWebRTC(
     id ?? "",
     localStream,
     socket,
@@ -323,6 +498,51 @@ function RoomPage() {
     };
   }, [socket]);
 
+  useEffect(() => {
+    if (!socket || !id) return;
+
+    const handleGranted = async () => {
+      console.log(
+        "🖥️  [Socket] Backend autorizó compartir pantalla. Delegando a useWebRTC...",
+      );
+
+      try {
+        // 🚀 EJECUTAMOS LA CAPTURA DENTRO DEL HOOK
+        const stream = await startScreenShare();
+
+        // 💡 IMPORTANTE: Si el hook captura el stream pero no lo devuelve,
+        // revisa useWebRTC.ts para asegurarte de que tenga un 'return stream;' al final del try.
+        if (stream) {
+          console.log("📺 Stream de pantalla obtenido con éxito:", stream.id);
+          setScreenStream(stream);
+          screenStreamRef.current = stream;
+          setRoomScreenSharing(true);
+
+          // Escuchamos el botón nativo de "Dejar de compartir" de la barra de Chrome
+          stream.getVideoTracks()[0].onended = () => {
+            console.log(
+              "🖥️  [Browser] Pantalla finalizada desde el control nativo.",
+            );
+            setScreenStream(null);
+            screenStreamRef.current = null;
+            setRoomScreenSharing(false);
+          };
+        }
+      } catch (error) {
+        console.error(
+          "❌ Error en el flujo coordinado de pantalla compartida:",
+          error,
+        );
+      }
+    };
+
+    socket.on("screen-share-granted", handleGranted);
+
+    return () => {
+      socket.off("screen-share-granted", handleGranted);
+    };
+  }, [socket, id, startScreenShare, setRoomScreenSharing]);
+
   // ── Handlers memorizados ──────────────────────────────────────────────
   const handleSendMessage = useCallback(() => {
     const text = room.message.trim();
@@ -334,8 +554,10 @@ function RoomPage() {
   const handleLeaveRoom = useCallback(() => {
     leaveCall();
     localStream?.getTracks().forEach((track) => track.stop());
+    screenStream?.getTracks().forEach((track) => track.stop());
+    setScreenStream(null);
     navigate("/dashboard");
-  }, [leaveCall, localStream, navigate]);
+  }, [leaveCall, localStream, screenStream, navigate]);
 
   // ── Handlers de Permisos ─────────────────────────────────────────────
   const handleToggleMic = useCallback(() => {
@@ -363,6 +585,54 @@ function RoomPage() {
     }
     room.setCamOn((v) => !v);
   }, [cameraPermission, micPermission, room]);
+
+  const handleToggleScreenShare = async () => {
+    if (!socket || !id) return;
+
+    if (!screenSharing) {
+      console.log("➡️ [UI] Solicitando permiso al backend...");
+      try {
+        // 🚀 CAPTURA DIRECTA EN LA ROOM PAGE (Evita que screenStream se quede null)
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+
+        console.log("🖥️ [RoomPage] Pantalla capturada con éxito:", stream.id);
+        
+        // Guardamos en los estados de la página inmediatamente
+        setScreenStream(stream);
+        screenStreamRef.current = stream;
+        setRoomScreenSharing(true);
+
+        // Enviamos el stream al hook useWebRTC para que lo transmita a los peers
+        // Nota: Si tu startScreenShare actual no acepta parámetros, pasa el stream dentro de una función o adáptalo.
+        await startScreenShare(stream); 
+
+        // Escuchar el botón nativo de "Dejar de compartir" de Chrome/Firefox
+        stream.getVideoTracks()[0].onended = () => {
+          console.log("🖥️ [Browser] Compartir pantalla finalizado de forma nativa.");
+          stream.getTracks().forEach(t => t.stop());
+          socket.emit("stop-screen-share", { roomId: id });
+          setScreenStream(null);
+          screenStreamRef.current = null;
+          setRoomScreenSharing(false);
+        };
+
+      } catch (err) {
+        console.error("❌ Error al capturar pantalla en la UI:", err);
+        socket.emit("stop-screen-share", { roomId: id });
+      }
+    } else {
+      // Apagado manual desde el botón de la app
+      console.log("🛑 Deteniendo pantalla compartida manualmente...");
+      screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+      socket.emit("stop-screen-share", { roomId: id });
+      setScreenStream(null);
+      screenStreamRef.current = null;
+      setRoomScreenSharing(false);
+    }
+  };
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
@@ -426,9 +696,11 @@ function RoomPage() {
             <VideoGrid
               remotePeers={remotePeers}
               remoteStreams={remoteStreams}
+              remoteScreenStreams={remoteScreenStreams}
               localStream={localStream}
               camOn={room.camOn}
               totalPersonas={totalPersonas}
+              screenStream={screenStream}
             />
           </div>
         </main>
@@ -450,20 +722,14 @@ function RoomPage() {
         micOn={room.micOn}
         camOn={room.camOn}
         chatOpen={room.chatOpen}
+        screenSharing={screenSharing}
+        onToggleScreenShare={handleToggleScreenShare}
         onToggleMic={handleToggleMic}
         onToggleCam={handleToggleCam}
         onToggleChat={() => room.setChatOpen((v) => !v)}
         onLeave={handleLeaveRoom}
         micPermission={micPermission}
         camPermission={cameraPermission}
-      />
-
-      {/* Modal de Permisos */}
-      <PermissionModal
-        isOpen={showPermissionModal}
-        type={modalPermissionType}
-        onClose={() => setShowPermissionModal(false)}
-        onRetry={initDevices}
       />
     </div>
   );
