@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
 
-interface RemoteStream {
+export interface RemoteStream {
   userId: string;
   stream: MediaStream;
+  type: 'camera' | 'screen';
 }
 
 const ICE_SERVERS: RTCConfiguration = {
@@ -62,6 +63,13 @@ export function useWebRTC(
     };
   }, [socket]);
 
+  // ── Helper: obtener transceivers de video ordenados ────────────────
+  const getVideoTransceivers = useCallback((pc: RTCPeerConnection) => {
+    return pc.getTransceivers().filter(t =>
+      t.receiver.track?.kind === 'video'
+    );
+  }, []);
+
   // ── Creación / recuperación de PeerConnection ─────────────────────
   const createPeerConnection = useCallback(
     (remoteUserId: string) => {
@@ -80,30 +88,70 @@ export function useWebRTC(
       const pc = new RTCPeerConnection(ICE_SERVERS);
       peerConnections.current.set(remoteUserId, pc);
 
+      // ── Transceiver 1: Audio ──────────────────────────────────────
       if (localStream) {
         const audioTrack = localStream.getAudioTracks()[0];
-        const videoTrack = localStream.getVideoTracks()[0];
         if (audioTrack) {
           pc.addTrack(audioTrack, localStream);
         } else {
           pc.addTransceiver('audio', { direction: 'sendrecv' });
         }
+      } else {
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+      }
+
+      // ── Transceiver 2: Video CÁMARA ───────────────────────────────
+      if (localStream) {
+        const videoTrack = localStream.getVideoTracks()[0];
         if (videoTrack) {
           pc.addTrack(videoTrack, localStream);
         } else {
           pc.addTransceiver('video', { direction: 'sendrecv' });
         }
       } else {
-        pc.addTransceiver('audio', { direction: 'sendrecv' });
         pc.addTransceiver('video', { direction: 'sendrecv' });
       }
 
+      // ── Transceiver 3: Video SCREEN SHARE (vacío inicialmente) ────
+      pc.addTransceiver('video', { direction: 'sendrecv' });
+      console.log(`🖥️ [WebRTC] Transceiver de screen share pre-creado para: ${remoteUserId}`);
+
+      // ── ontrack: categorizar por índice de transceiver de video ────
       pc.ontrack = (event) => {
-        console.log(`🎵 [WebRTC] Track remoto recibido de ${remoteUserId}: ${event.track.kind}`);
-        const stream = event.streams[0];
+        const track = event.track;
+        const transceiver = event.transceiver;
+
+        console.log(`🎵 [WebRTC] Track remoto recibido de ${remoteUserId}: kind=${track.kind}, readyState=${track.readyState}, enabled=${track.enabled}`);
+
+        // Solo procesar tracks de video
+        if (track.kind !== 'video') return;
+
+        // Determinar tipo por índice: 1er video = cámara, 2do video = screen
+        const videoTransceivers = getVideoTransceivers(pc);
+        const videoIndex = videoTransceivers.indexOf(transceiver);
+        const type: 'camera' | 'screen' = videoIndex <= 0 ? 'camera' : 'screen';
+
+        console.log(`🎬 [WebRTC] Track de video #${videoIndex} de ${remoteUserId} → tipo: ${type}`);
+
+        // Obtener o crear stream
+        let stream = event.streams[0];
+        if (!stream) {
+          stream = new MediaStream([track]);
+          console.log(`📦 [WebRTC] Stream creado manualmente para ${type} de ${remoteUserId}`);
+        }
+
         setRemoteStreams((prev) => {
-          if (prev.some((s) => s.userId === remoteUserId)) return prev;
-          return [...prev, { userId: remoteUserId, stream }];
+          const existing = prev.find((s) => s.userId === remoteUserId && s.type === type);
+          if (existing) {
+            if (existing.stream !== stream) {
+              console.log(`🔄 [WebRTC] Actualizando stream ${type} de ${remoteUserId}`);
+              return prev.map((s) =>
+                (s.userId === remoteUserId && s.type === type) ? { ...s, stream } : s
+              );
+            }
+            return prev;
+          }
+          return [...prev, { userId: remoteUserId, stream, type }];
         });
       };
 
@@ -127,7 +175,7 @@ export function useWebRTC(
 
       return pc;
     },
-    [roomId, socket, localStream]
+    [roomId, socket, localStream, getVideoTransceivers]
   );
 
   // ── Iniciar llamada (oferta) ──────────────────────────────────────
@@ -350,23 +398,89 @@ export function useWebRTC(
     setRemoteStreams([]);
   }, [socket, roomId]);
 
-  // ── Reemplazar track de video en todos los peers (para screen share) ─
+  // ── Reemplazar track de CÁMARA en todos los peers ─────────────────
   const replaceVideoTrack = useCallback(async (newTrack: MediaStreamTrack | null) => {
+    const promises: Promise<void>[] = [];
+
     peerConnections.current.forEach((pc, peerId) => {
-      // Buscar el transceiver de video (funciona incluso si sender.track es null)
-      const videoTransceiver = pc.getTransceivers().find(t =>
-        t.sender.track?.kind === 'video' || t.receiver.track?.kind === 'video'
-      );
-      if (videoTransceiver) {
-        videoTransceiver.sender.replaceTrack(newTrack);
-        console.log(`🔄 [WebRTC] Track de video reemplazado para peer: ${peerId}`);
+      const videoTransceivers = getVideoTransceivers(pc);
+      // El transceiver de cámara es el primero (índice 0)
+      const cameraTransceiver = videoTransceivers[0];
+
+      if (cameraTransceiver) {
+        const p = cameraTransceiver.sender.replaceTrack(newTrack)
+          .then(() => {
+            console.log(`🔄 [WebRTC] Track de CÁMARA reemplazado para peer: ${peerId}`);
+          })
+          .catch(err => {
+            console.error(`❌ [WebRTC] Error reemplazando track de cámara para peer ${peerId}:`, err);
+          });
+        promises.push(p);
       } else {
-        console.warn(`⚠️ [WebRTC] No se encontró transceiver de video para peer: ${peerId}`);
+        console.warn(`⚠️ [WebRTC] No se encontró transceiver de cámara para peer: ${peerId}`);
       }
     });
-  }, []);
 
-  return { remoteStreams, joinCall, leaveCall, replaceVideoTrack };
+    await Promise.all(promises);
+
+    // Renegociar para adaptar el codificador a los posibles cambios del track
+    peerConnections.current.forEach((_, peerId) => callUser(peerId));
+  }, [getVideoTransceivers, callUser]);
+
+  // ── Iniciar SCREEN SHARE en todos los peers ───────────────────────
+  const startScreenShare = useCallback(async (screenTrack: MediaStreamTrack) => {
+    const promises: Promise<void>[] = [];
+
+    peerConnections.current.forEach((pc, peerId) => {
+      const videoTransceivers = getVideoTransceivers(pc);
+      // El transceiver de screen share es el segundo (índice 1)
+      const screenTransceiver = videoTransceivers[1];
+
+      if (screenTransceiver) {
+        const p = screenTransceiver.sender.replaceTrack(screenTrack)
+          .then(() => {
+            console.log(`🖥️ [WebRTC] Screen share track enviado a peer: ${peerId}`);
+          })
+          .catch(err => {
+            console.error(`❌ [WebRTC] Error enviando screen share a peer ${peerId}:`, err);
+          });
+        promises.push(p);
+      } else {
+        console.warn(`⚠️ [WebRTC] No se encontró transceiver de screen para peer: ${peerId}. Transceivers de video: ${videoTransceivers.length}`);
+      }
+    });
+
+    await Promise.all(promises);
+
+    // Renegociar para adaptar el codificador a la pantalla compartida (crucial para pestañas de Chrome)
+    peerConnections.current.forEach((_, peerId) => callUser(peerId));
+  }, [getVideoTransceivers, callUser]);
+
+  // ── Detener SCREEN SHARE en todos los peers ───────────────────────
+  const stopScreenShare = useCallback(async () => {
+    const promises: Promise<void>[] = [];
+
+    peerConnections.current.forEach((pc, peerId) => {
+      const videoTransceivers = getVideoTransceivers(pc);
+      const screenTransceiver = videoTransceivers[1];
+
+      if (screenTransceiver) {
+        const p = screenTransceiver.sender.replaceTrack(null)
+          .then(() => {
+            console.log(`🖥️ [WebRTC] Screen share detenido para peer: ${peerId}`);
+          })
+          .catch(err => {
+            console.error(`❌ [WebRTC] Error deteniendo screen share para peer ${peerId}:`, err);
+          });
+        promises.push(p);
+      }
+    });
+
+    await Promise.all(promises);
+
+    // Renegociar para actualizar el SDP
+    peerConnections.current.forEach((_, peerId) => callUser(peerId));
+  }, [getVideoTransceivers, callUser]);
+
+  return { remoteStreams, joinCall, leaveCall, replaceVideoTrack, startScreenShare, stopScreenShare };
 }
-
-

@@ -8,6 +8,7 @@ interface Participant {
     speaking: boolean;
     camOn: boolean;
     micOn: boolean;
+    sharing: boolean;
 }
 
 let socket: Socket | null = null;
