@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff } from "lucide-react";
+import { Mic, MicOff, VideoOff } from "lucide-react";
 
 interface Props {
   name: string;
@@ -92,6 +92,7 @@ export function ParticipantCard({
   // criterio que ya usabas para isVideoActive cuando camOn es undefined),
   // para no afectar a cards que todavía no pasan esta prop.
   const isMicOn = micOn ?? true;
+  const isCamOn = camOn ?? true;
 
   return (
     <div
@@ -137,22 +138,34 @@ export function ParticipantCard({
         </div>
       )}
 
-      {/* Indicador de micrófono: aparece siempre en la esquina, tachado en rojo si está apagado */}
-      <div
-        className={`absolute top-2.5 right-2.5 z-10 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-colors
-                    ${isMicOn ? "bg-gray-950/40 backdrop-blur-sm" : "bg-red-600/90"}`}
-        title={isMicOn ? "Micrófono activado" : "Micrófono silenciado"}
-      >
-        {isMicOn ? (
-          <Mic className="w-3.5 h-3.5 text-white" />
-        ) : (
-          <MicOff className="w-3.5 h-3.5 text-white" />
+      {/* Indicadores de micrófono y cámara: aparecen en la esquina superior derecha */}
+      <div className="absolute top-2.5 right-2.5 z-10 flex gap-2">
+        <div
+          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-colors
+                      ${isMicOn ? "bg-gray-950/40 backdrop-blur-sm" : "bg-red-600/90"}`}
+          title={isMicOn ? "Micrófono activado" : "Micrófono silenciado"}
+        >
+          {isMicOn ? (
+            <Mic className="w-3.5 h-3.5 text-white" />
+          ) : (
+            <MicOff className="w-3.5 h-3.5 text-white" />
+          )}
+        </div>
+        {!isCamOn && (
+          <div
+            className="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center bg-red-600/90 transition-colors"
+            title="Cámara apagada"
+          >
+            <VideoOff className="w-3.5 h-3.5 text-white" />
+          </div>
         )}
       </div>
 
       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-10 bg-gray-950/40 backdrop-blur-sm p-1.5 px-2.5 rounded-xl">
-        <span className="text-white text-xs sm:text-sm font-medium truncate drop-shadow">
+        <span className="text-white text-xs sm:text-sm font-medium truncate drop-shadow flex items-center gap-1.5">
           {name}
+          {!isMicOn && <MicOff className="w-3 h-3 text-red-400 shrink-0" />}
+          {!isCamOn && <VideoOff className="w-3 h-3 text-red-400 shrink-0" />}
         </span>
         {speaking && (
           <span className="flex gap-0.5 items-end h-4 ml-2 shrink-0">
