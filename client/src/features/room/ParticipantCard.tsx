@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Monitor } from 'lucide-react';
+import { Monitor, MicOff, VideoOff } from 'lucide-react';
 
 interface Props {
     name: string;
@@ -7,11 +7,12 @@ interface Props {
     stream?: MediaStream | null;
     isLocal?: boolean;
     camOn?: boolean;
+    micOn?: boolean;
     isScreenShare?: boolean;
     className?: string;
 }
 
-export function ParticipantCard({ name, speaking, stream, isLocal = false, camOn, isScreenShare = false, className = '' }: Props) {
+export function ParticipantCard({ name, speaking, stream, isLocal = false, camOn, micOn, isScreenShare = false, className = '' }: Props) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isVideoActive, setIsVideoActive] = useState(false);
 
@@ -182,21 +183,44 @@ export function ParticipantCard({ name, speaking, stream, isLocal = false, camOn
                 </div>
             )}
 
+            {!isScreenShare && (
+                <div className="absolute top-3 right-3 z-10 flex gap-2">
+                    {micOn === false && (
+                        <div className="bg-red-500/90 backdrop-blur-sm p-1.5 rounded-full shadow-md flex items-center justify-center border border-red-500/20">
+                            <MicOff className="h-3.5 w-3.5 text-white" />
+                        </div>
+                    )}
+                    {camOn === false && (
+                        <div className="bg-red-500/90 backdrop-blur-sm p-1.5 rounded-full shadow-md flex items-center justify-center border border-red-500/20">
+                            <VideoOff className="h-3.5 w-3.5 text-white" />
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-10 bg-gray-950/40 backdrop-blur-sm p-1.5 px-2.5 rounded-xl">
                 <span className="text-white text-xs sm:text-sm font-medium truncate drop-shadow">
                     {displayName}
                 </span>
-                {speaking && !isScreenShare && (
-                    <span className="flex gap-0.5 items-end h-4 ml-2 shrink-0">
-                        {[1, 2, 3].map(i => (
-                            <span
-                                key={i}
-                                className="w-1 bg-cyan-400 rounded-full animate-pulse"
-                                style={{ height: `${i * 30}%`, animationDelay: `${i * 0.1}s` }}
-                            />
-                        ))}
-                    </span>
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                    {speaking && !isScreenShare && (
+                        <span className="flex gap-0.5 items-end h-4 ml-2">
+                            {[1, 2, 3].map(i => (
+                                <span
+                                    key={i}
+                                    className="w-1 bg-cyan-400 rounded-full animate-pulse"
+                                    style={{ height: `${i * 30}%`, animationDelay: `${i * 0.1}s` }}
+                                />
+                            ))}
+                        </span>
+                    )}
+                    {!isScreenShare && camOn === false && (
+                        <VideoOff className="h-3.5 w-3.5 text-red-400" />
+                    )}
+                    {!isScreenShare && micOn === false && (
+                        <MicOff className="h-3.5 w-3.5 text-red-400" />
+                    )}
+                </div>
             </div>
         </div>
     );

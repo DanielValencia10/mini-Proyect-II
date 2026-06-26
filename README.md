@@ -332,15 +332,46 @@ DELETE http://localhost:3000/rooms/ROOM123
 Authorization: Bearer <token>
 ```
 
-### WebSocket (Socket.IO)
+### 🔌 Arquitectura en Tiempo Real: WebSocket y WebRTC P2P
 
-Eventos de comunicación en tiempo real:
-- `join_room` - Unirse a sala
-- `leave_room` - Salir de sala
-- `send_message` - Enviar mensaje
-- `user_joined` - Notificación de usuario que entra
-- `user_left` - Notificación de usuario que sale
-- `receive_message` - Recibir mensaje
+La plataforma cuenta con un sistema de comunicación en tiempo real que soporta mensajería de chat (Firestore + WebSockets) y videoconferencia multiusuario P2P (WebRTC) con compartición de pantalla.
+
+#### 1. Arquitectura de Señalización y Flujo P2P (WebRTC)
+
+Para establecer las conexiones directas punto a punto (P2P), se utiliza Socket.IO como servidor de señalización. El flujo sigue el estándar de **Negociación Perfecta (Perfect Negotiation)**:
+- **Roles Polite / Impolite**: En llamadas multiusuario, las colisiones de ofertas (glare) se resuelven asignando un rol `polite` al usuario con el `userId` lexicográficamente menor (`currentUserId < remoteUserId`). El usuario `polite` cancela su oferta y acepta la oferta del peer `impolite` en caso de colisión, evitando que la llamada falle.
+- **Intercambio de Candidatos ICE**: Los candidatos ICE recolectados por el navegador son enviados mediante el canal de comunicación en tiempo real y aplicados de manera diferida si la descripción remota SDP aún no ha sido establecida.
+- **Infraestructura NAT Traversal**: Se configuran servidores **STUN** públicos (Google) y **TURN** con autenticación (Metered) para garantizar la conectividad de red incluso detrás de firewalls y NAT simétricos.
+
+#### 2. Eventos de WebSocket (Socket.IO)
+
+##### 💬 Chat y Presencia
+- `join-room` (Cliente ➔ Servidor): Emite el ID de la sala (`roomId`) y el nombre del usuario para unirse. Registra al usuario en la base de datos en memoria del servidor.
+- `leave-room` (Cliente ➔ Servidor): Sale de la sala e informa a los demás participantes.
+- `send_message` (Cliente ➔ Servidor): Envía un mensaje en la sala, guardándolo de forma persistente en Firestore y retransmitiéndolo en tiempo real.
+- `receive_message` (Servidor ➔ Cliente): Transmite un nuevo mensaje de chat a los miembros de la sala.
+- `room-participants` (Servidor ➔ Cliente): Envía la lista actualizada de participantes activos en la sala, incluyendo sus estados en tiempo real (`camOn`, `micOn`, `speaking`).
+- `update-media-state` (Cliente ➔ Servidor): Notifica un cambio de estado en la cámara (`camOn`) o micrófono (`micOn`) del usuario local. El servidor actualiza el registro en memoria y emite `room-participants`.
+
+##### 📹 Videollamadas (WebRTC)
+- `join-call` (Cliente ➔ Servidor): Solicita unirse a la sala de llamada física `call:${roomId}`.
+- `user-joined-call` (Servidor ➔ Cliente): Avisa a los usuarios en la llamada que un nuevo participante ha ingresado, indicándole que inicie la negociación (envío de SDP Offer).
+- `existing-call-participants` (Servidor ➔ Cliente): Retorna al usuario que se acaba de conectar la lista de `userId` que ya están en la llamada para iniciar la conexión P2P con cada uno de ellos.
+- `webrtc-offer` (Cliente ➔ Servidor ➔ Cliente): Retransmite la oferta SDP (`offer`) al usuario de destino (`to`).
+- `webrtc-answer` (Cliente ➔ Servidor ➔ Cliente): Retransmite la respuesta SDP (`answer`) al creador de la oferta (`to`).
+- `webrtc-ice-candidate` (Cliente ➔ Servidor ➔ Cliente/Sala): Retransmite un candidato ICE al destinatario final para establecer o restablecer la conexión P2P.
+- `leave-call` (Cliente ➔ Servidor): Abandona voluntariamente la llamada activa de la sala.
+- `user-left-call` (Servidor ➔ Cliente): Notifica que un participante ha salido (o se ha desconectado tras un período de gracia de 8 segundos) para cerrar su `RTCPeerConnection` y limpiar su track de video en la interfaz.
+
+##### 🖥️ Compartición de Pantalla
+- `request-screen-share` (Cliente ➔ Servidor): El cliente solicita permiso para compartir pantalla.
+- `screen-share-granted` (Servidor ➔ Cliente): Confirma la autorización de compartir pantalla para que el cliente capture su desktop usando `getDisplayMedia`.
+- `screen-share-conflict` (Servidor ➔ Cliente): Si otro usuario ya está compartiendo pantalla, envía los sharers activos y determina si el solicitante es el Host (Creador de la sala) para permitirle forzar detener la transmisión de los demás.
+- `resolve-screen-share-conflict` (Cliente ➔ Servidor): Envía la acción elegida para resolver el conflicto (`proceed` para compartir en paralelo, `cancel` para desistir, o `stop-other` si es Host y desea detener la transmisión de los demás).
+- `screen-share-started` (Servidor ➔ Cliente): Avisa a los demás participantes que un usuario ha comenzado a compartir pantalla.
+- `stop-screen-share` (Cliente ➔ Servidor): Notifica que el usuario ha dejado de compartir pantalla voluntariamente.
+- `screen-share-stopped` (Servidor ➔ Cliente): Informa a los clientes remotos que se ha detenido una compartición de pantalla para que eliminen el stream secundario.
+- `force-stop-screen-share` (Servidor ➔ Cliente): Ordena a un participante detener su compartición de pantalla de forma mandatoria (invocado por el Host mediante `stop-other`).
 
 ## 🔐 Características de Seguridad
 
