@@ -31,9 +31,9 @@ interface VideoGridProps {
   remoteScreenStreams: ReturnType<typeof useWebRTC>["remoteScreenStreams"];
   localStream: MediaStream | null;
   camOn: boolean;
+  micOn: boolean;
   totalPersonas: number;
   screenStream?: MediaStream | null;
-  /** userId del propio usuario, para poder distinguir "tu pantalla" de las demás. */
   currentUserId: string;
 }
 
@@ -86,6 +86,7 @@ function VideoGrid({
   remoteScreenStreams = new Map(),
   localStream,
   camOn,
+  micOn,
   totalPersonas,
   screenStream,
   currentUserId,
@@ -166,6 +167,7 @@ function VideoGrid({
         stream={streamParaMiCard}
         isLocal={true}
         className={className}
+        micOn={micOn}
       />
     );
   };
@@ -181,6 +183,7 @@ function VideoGrid({
         stream={cameraStream}
         camOn={peer.camOn}
         isLocal={false}
+        micOn={peer.micOn}
       />
     );
   };
@@ -723,6 +726,7 @@ function RoomPage() {
               remoteScreenStreams={remoteScreenStreams}
               localStream={localStream}
               camOn={room.camOn}
+              micOn={room.micOn}
               totalPersonas={totalPersonas}
               screenStream={screenStream}
               currentUserId={currentUserId}
