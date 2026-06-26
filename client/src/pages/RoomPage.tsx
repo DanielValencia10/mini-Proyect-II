@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Hash, Users, Video } from "lucide-react";
+import { Hash, Users, Video, Copy, Check } from "lucide-react";
 import useAuthStore from "../stores/useAuthStore";
 import { getRoomMessages } from "../services/roomService";
 import { useRoom } from "../hooks/useRoom";
@@ -193,7 +193,7 @@ function VideoGrid({
   // ==========================================
   if (mainScreen) {
     return (
-      <div className="flex flex-col lg:flex-row gap-4 w-full h-full max-w-7xl items-stretch">
+      <div className="flex flex-col lg:flex-row gap-4 w-full h-full items-stretch">
         {/* Columna principal: pantalla grande + miniaturas de otras pantallas (si hay más de una) */}
         <div className="flex-1 min-w-0 flex flex-col gap-3">
           <div className="flex-1 min-h-[300px] bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
@@ -313,6 +313,7 @@ function RoomPage() {
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // ── Estados de Permisos ─────────────────────────────────────────────────
   const [cameraPermission, setCameraPermission] = useState<
@@ -599,7 +600,7 @@ function RoomPage() {
     room.setMicOn((v) => !v);
   }, [micPermission, cameraPermission, room]);
 
-  const handleToggleCam = useCallback(() => {
+  const handleToggleCam = useCallback(async () => {
     if (cameraPermission === "denied" || cameraPermission === "unavailable") {
       setModalPermissionType(
         micPermission === "denied" || micPermission === "unavailable"
@@ -609,7 +610,36 @@ function RoomPage() {
       setShowPermissionModal(true);
       return;
     }
-    room.setCamOn((v) => !v);
+    
+    if (room.camOn) {
+      if (localStreamRef.current) {
+        const audioTracks = localStreamRef.current.getAudioTracks();
+        localStreamRef.current.getVideoTracks().forEach((track) => track.stop());
+        const newStream = new MediaStream(audioTracks);
+        setLocalStream(newStream);
+      }
+      room.setCamOn(false);
+    } else {
+      try {
+        const newVideoStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+        if (localStreamRef.current) {
+          const audioTracks = localStreamRef.current.getAudioTracks();
+          const newStream = new MediaStream([
+            ...audioTracks,
+            ...newVideoStream.getVideoTracks(),
+          ]);
+          setLocalStream(newStream);
+        } else {
+          setLocalStream(newVideoStream);
+        }
+        room.setCamOn(true);
+      } catch (error) {
+        console.error("Error al encender la cámara:", error);
+      }
+    }
   }, [cameraPermission, micPermission, room]);
 
   const handleToggleScreenShare = async () => {
@@ -672,10 +702,28 @@ function RoomPage() {
           </div>
           <span className="font-bold hidden sm:block">StudyRoom</span>
           <span className="text-gray-500 hidden sm:block">|</span>
-          <div className="flex items-center gap-1 text-cyan-400 text-sm">
+          <button
+            onClick={() => {
+              if (id) {
+                navigator.clipboard.writeText(id);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }
+            }}
+            className="flex items-center gap-1.5 text-cyan-400 text-sm hover:text-cyan-300 hover:bg-gray-800 px-2 py-1 rounded transition-all active:scale-95 group"
+            title="Copiar código de sala"
+          >
             <Hash className="h-4 w-4" />
             <span className="font-mono font-bold">{id}</span>
-          </div>
+            {copied ? (
+              <span className="flex items-center gap-1 text-green-400 ml-1">
+                <Check className="h-4 w-4" />
+                <span className="text-xs font-semibold">¡Copiado!</span>
+              </span>
+            ) : (
+              <Copy className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity ml-1" />
+            )}
+          </button>
         </div>
         <div className="flex items-center gap-2 text-sm text-gray-400">
           <Users className="h-4 w-4" />

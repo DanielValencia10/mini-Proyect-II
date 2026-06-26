@@ -332,15 +332,47 @@ DELETE http://localhost:3000/rooms/ROOM123
 Authorization: Bearer <token>
 ```
 
-### WebSocket (Socket.IO)
+### 📡 Arquitectura de Tiempo Real (WebSocket & WebRTC P2P)
 
-Eventos de comunicación en tiempo real:
-- `join_room` - Unirse a sala
-- `leave_room` - Salir de sala
-- `send_message` - Enviar mensaje
-- `user_joined` - Notificación de usuario que entra
-- `user_left` - Notificación de usuario que sale
-- `receive_message` - Recibir mensaje
+La aplicación utiliza un modelo híbrido para la comunicación: **Socket.IO** para la señalización (signaling) y mensajería, y **WebRTC** para la transmisión Peer-to-Peer (P2P) de audio, video y pantalla.
+
+#### 1. Negociación Perfecta (Perfect Negotiation WebRTC)
+Para evitar condiciones de carrera ("glare") cuando dos pares intentan establecer una conexión simultáneamente, implementamos el patrón de **Negociación Perfecta**:
+- Se asignan roles **Polite** (cortés) e **Impolite** (descortés) basados en el id de los usuarios que están iniciando la llamada.
+- El nodo *polite* siempre cede ante un conflicto de oferta, evitando colisiones de señalización WebRTC y asegurando un estado de conexión estable bidireccional.
+
+#### 2. NAT Traversal y Flujo ICE
+Para garantizar la conectividad P2P a través de firewalls y NAT restrictivos, utilizamos infraestructura ICE:
+- **Candidatos ICE**: Negociados asíncronamente vía Socket.IO (`webrtc-ice-candidate`).
+- **STUN (Session Traversal Utilities for NAT)**: Utilizamos los servidores públicos de Google (`stun.l.google.com:19302`) para descubrir direcciones IP públicas.
+- **TURN (Traversal Using Relays around NAT)**: Contamos con un servidor TURN administrado a través de **Metered**, asegurando conexiones de retransmisión (relay) cuando el P2P directo no es posible debido a NATs simétricos o muy estrictos.
+
+#### 3. Catálogo de Eventos Socket.IO (18 Eventos)
+
+**Chat y Presencia**
+- `join_room` / `join-room`: Un usuario solicita entrar a una sala (se une al room de socket).
+- `user_joined` / `user-joined`: Notifica al resto de clientes de la sala que alguien entró.
+- `leave_room` / `leave-room`: Un usuario abandona intencionalmente o por desconexión.
+- `user_left` / `user-left`: Notifica a los demás que alguien salió.
+- `send_message`: El cliente envía un nuevo mensaje al servidor de chat.
+- `receive_message`: El servidor transmite el mensaje validado a la sala.
+- `update-media-state`: Mantiene en sincronía visual el estado de los peers (Mute/VideoOff).
+- `room-deleted`: El creador elimina la sala, forzando la expulsión ordenada de los demás participantes.
+
+**Videollamadas (Señalización WebRTC)**
+- `join-call`: Indica que los periféricos locales están listos para la negociación WebRTC.
+- `user-joined-call`: Informa al ecosistema P2P que inicie el intercambio con el nuevo par.
+- `webrtc-offer`: Transporte de la oferta de sesión local (Session Description Protocol - SDP).
+- `webrtc-answer`: Transporte de la respuesta SDP del remoto.
+- `webrtc-ice-candidate`: Intercambio de las rutas y protocolos óptimos de red.
+- `user-left-call`: Evento de desconexión de pistas de medios y cierre de los canales PeerConnection.
+
+**Compartición de Pantalla**
+- `request-screen-share`: Pide permiso de autorización al backend para comenzar a presentar.
+- `screen-share-granted`: Autorización concedida (solo puede haber una pantalla activa a la vez).
+- `resolve-screen-share-conflict`: Disparado en choques de solicitud simultánea.
+- `force-stop-screen-share`: Acción administrativa de detener el stream actual de manera remota.
+- `stop-screen-share`: Detención proactiva del usuario de su propio stream.
 
 ## 🔐 Características de Seguridad
 
