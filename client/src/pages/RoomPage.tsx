@@ -322,16 +322,16 @@ function RoomPage() {
   const [micPermission, setMicPermission] = useState<
     "granted" | "denied" | "unavailable" | "prompt"
   >("prompt");
-
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [modalPermissionType, setModalPermissionType] = useState<
     "camera" | "mic" | "both"
-  >("both");
-
+  >("camera");
+  
+  const [incomingShareRequest, setIncomingShareRequest] = useState<{ requesterId: string, requesterName: string } | null>(null);
+  const [pendingShareMessage, setPendingShareMessage] = useState<string | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const pendingScreenStreamRef = useRef<MediaStream | null>(null);
-  const [incomingShareRequest, setIncomingShareRequest] = useState<{ requesterId: string, requesterName: string } | null>(null);
 
   // Sincronizar referencia del stream local para limpiezas futuras
   useEffect(() => {
@@ -525,6 +525,7 @@ function RoomPage() {
       console.log(
         "🖥️  [Socket] Backend autorizó compartir pantalla. Delegando a useWebRTC...",
       );
+      setPendingShareMessage(null);
 
       try {
         const stream = pendingScreenStreamRef.current;
@@ -562,6 +563,7 @@ function RoomPage() {
 
     const handleDenied = (data: { reason: string }) => {
         console.warn(`🚫 [Screen Share] Permiso denegado: ${data.reason}`);
+        setPendingShareMessage(null);
         if (pendingScreenStreamRef.current) {
             pendingScreenStreamRef.current.getTracks().forEach((t) => t.stop());
             pendingScreenStreamRef.current = null;
@@ -571,17 +573,35 @@ function RoomPage() {
 
     const handleRequestFromUser = (data: { requesterId: string, requesterName: string }) => {
         console.log(`⚠️ [Screen Share] Petición entrante de: ${data.requesterName}`);
+        alert(`¡Atención! ${data.requesterName} quiere compartir pantalla. Revisa la ventana de la reunión para aceptar o rechazar.`);
         setIncomingShareRequest({ requesterId: data.requesterId, requesterName: data.requesterName });
+    };
+
+    const handleForceStop = () => {
+        console.log("🛑 [RoomPage] El servidor pidió detener pantalla (Forced)");
+        screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+        setScreenStream(null);
+        screenStreamRef.current = null;
+        setRoomScreenSharing(false);
+    };
+
+    const handlePending = (data: { message: string }) => {
+        console.log(`⏳ [Screen Share] ${data.message}`);
+        setPendingShareMessage(data.message);
     };
 
     socket.on("screen-share-granted", handleGranted);
     socket.on("screen-share-denied", handleDenied);
     socket.on("screen-share-request-from-user", handleRequestFromUser);
+    socket.on("force-stop-screen-share", handleForceStop);
+    socket.on("screen-share-pending", handlePending);
 
     return () => {
       socket.off("screen-share-granted", handleGranted);
       socket.off("screen-share-denied", handleDenied);
       socket.off("screen-share-request-from-user", handleRequestFromUser);
+      socket.off("force-stop-screen-share", handleForceStop);
+      socket.off("screen-share-pending", handlePending);
     };
   }, [socket, id, startScreenShare, setRoomScreenSharing]);
 
@@ -676,6 +696,7 @@ function RoomPage() {
         // Escuchar si el usuario cancela desde el navegador antes de que aprueben
         stream.getVideoTracks()[0].onended = () => {
           pendingScreenStreamRef.current = null;
+          setPendingShareMessage(null);
           // Opcionalmente notificar al servidor que se canceló la petición
         };
 
@@ -783,6 +804,16 @@ function RoomPage() {
         </div>
       )}
 
+      {/* Banner de espera para compartir pantalla */}
+      {pendingShareMessage && (
+        <div className="bg-yellow-950/80 border-b border-yellow-900/40 px-4 py-2 sm:px-6 flex items-center justify-center text-xs sm:text-sm text-yellow-200 z-30 transition-all shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400"></span>
+            <span className="font-medium">{pendingShareMessage}</span>
+          </div>
+        </div>
+      )}
+
       {/* Área principal: video + chat */}
       <div className="flex flex-1 min-w-0 overflow-hidden min-h-0 relative">
         <main className="flex-1 min-w-0 p-4 overflow-hidden min-h-0 relative flex items-center justify-center">
@@ -839,7 +870,7 @@ function RoomPage() {
       />
 
       {incomingShareRequest && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
             <h3 className="text-xl font-bold text-white mb-2">Solicitud de Pantalla</h3>
             <p className="text-gray-300 mb-6 text-sm">
