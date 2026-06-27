@@ -190,20 +190,33 @@ export function useWebRTC(
 
         if (isScreen) {
           if (event.track.kind !== "video") return;
-          console.log(`🖥️ [WebRTC] Pantalla compartida recibida de ${remoteUserId}`);
           const screenStream = event.streams[0] ?? new MediaStream([event.track]);
-          setRemoteScreenStreams((prev) => {
-            const next = new Map(prev);
-            next.set(remoteUserId, screenStream);
-            return next;
-          });
-          event.track.onended = () => {
+          
+          const handleTrackUnmute = () => {
+            console.log(`🖥️ [WebRTC] Pantalla compartida activa de ${remoteUserId}`);
+            setRemoteScreenStreams((prev) => {
+              const next = new Map(prev);
+              next.set(remoteUserId, screenStream);
+              return next;
+            });
+          };
+
+          const handleTrackMute = () => {
+            console.log(`🖥️ [WebRTC] Pantalla compartida silenciada de ${remoteUserId}`);
             setRemoteScreenStreams((prev) => {
               const next = new Map(prev);
               next.delete(remoteUserId);
               return next;
             });
           };
+
+          if (!event.track.muted) {
+            handleTrackUnmute();
+          }
+
+          event.track.onunmute = handleTrackUnmute;
+          event.track.onmute = handleTrackMute;
+          event.track.onended = handleTrackMute;
           return;
         }
 
@@ -216,11 +229,16 @@ export function useWebRTC(
           const knownCameraStreamId = cameraStreamId.current.get(remoteUserId);
           if (!knownCameraStreamId) {
             cameraStreamId.current.set(remoteUserId, stream.id);
-            if (currentRemoteStreams.some((s) => s.userId === remoteUserId))
-              return currentRemoteStreams;
+            if (currentRemoteStreams.some((s) => s.userId === remoteUserId)) {
+              return currentRemoteStreams.map((s) =>
+                s.userId === remoteUserId ? { ...s, stream } : s
+              );
+            }
             return [...currentRemoteStreams, { userId: remoteUserId, stream }];
           }
-          return currentRemoteStreams;
+          return currentRemoteStreams.map((s) =>
+            s.userId === remoteUserId ? { ...s, stream } : s
+          );
         });
       };
 
@@ -393,19 +411,19 @@ export function useWebRTC(
       const remoteUserId = data.from;
       const pc = peerConnections.current.get(remoteUserId);
 
+      if (!pc) return;
+
       try {
         // 1. REGLA DE NEGOCIACIÓN PERFECTA:
-        // Si decidimos ignorar la oferta asociada a este candidato, descartamos el candidato de forma segura.
+        // Restaurar la bandera si llega el fin de candidatos o si estamos estables.
         if (ignoreOffer.current.get(remoteUserId)) {
-          // Si el candidato es null o el pc volvió a estar estable, podemos restaurar la bandera
           if (!data.candidate || pc?.signalingState === "stable") {
             ignoreOffer.current.set(remoteUserId, false);
           }
-          return;
         }
 
-        // 2. Tu lógica original de encolamiento si no hay remoteDescription aún
-        if (!pc || !pc.remoteDescription) {
+        // 2. Encolar si no hay remoteDescription aún
+        if (!pc.remoteDescription) {
           const q = pendingCandidates.current.get(remoteUserId) ?? [];
           q.push(data.candidate);
           pendingCandidates.current.set(remoteUserId, q);
@@ -415,13 +433,15 @@ export function useWebRTC(
           return;
         }
 
-        // 3. Añadir el candidato normalmente si todo está en orden
+        // 3. Añadir el candidato
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         console.log(
           `❄️ [WebRTC] Candidato ICE agregado desde: ${remoteUserId}`,
         );
       } catch (err) {
-        console.error("❌ [WebRTC] Error agregando candidato ICE:", err);
+        if (!ignoreOffer.current.get(remoteUserId)) {
+          console.error("❌ [WebRTC] Error agregando candidato ICE:", err);
+        }
       }
     },
     [],
