@@ -339,6 +339,7 @@ export function useWebRTC(
       try {
         // setRemoteDescription hace rollback automático si hace falta (lado "polite" en colisión).
         await pc.setRemoteDescription(data.offer);
+        await flushPendingCandidates(remoteUserId, pc);
 
         if (data.offer.type === "offer") {
           await pc.setLocalDescription(); // 👈 igual de atómico para generar el Answer
@@ -356,7 +357,7 @@ export function useWebRTC(
         );
       }
     },
-    [currentUserId, roomId, socket],
+    [currentUserId, roomId, socket, flushPendingCandidates],
   );
 
   const handleAnswer = useCallback(
