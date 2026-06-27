@@ -20,6 +20,12 @@ interface Message {
 // ─── Gap entre tiles del grid dinámico ───────────────────────────────────────
 const GAP = 8;
 
+const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
+
 // ─── Subcomponente para las diferentes distribuciones de video ─────────────
 
 interface VideoGridProps {
@@ -476,7 +482,7 @@ function RoomPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
-        audio: true,
+        audio: AUDIO_CONSTRAINTS,
       });
 
       setLocalStream(stream);
@@ -500,7 +506,7 @@ function RoomPage() {
       try {
         const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
           video: false,
-          audio: true,
+          audio: AUDIO_CONSTRAINTS,
         });
 
         setLocalStream(audioOnlyStream);
@@ -557,6 +563,15 @@ function RoomPage() {
   );
 
   const hasScreenShare = !!screenStream || remoteScreenStreams.size > 0;
+
+  // Activar modo presentación automáticamente cuando alguien comparte pantalla
+  useEffect(() => {
+    if (hasScreenShare) {
+      setPresentationMode(true);
+    } else {
+      setPresentationMode(false);
+    }
+  }, [hasScreenShare]);
 
   // ── Sincronización de pista de audio ───────────────────────────────────
   useEffect(() => {
@@ -651,6 +666,7 @@ function RoomPage() {
         setRoomScreenSharing(true);
 
         await startScreenShare(stream);
+        socket.emit("confirm-screen-share-started", { roomId: id });
 
         // Escuchamos el botón nativo de "Dejar de compartir" de la barra de Chrome
         stream.getVideoTracks()[0].onended = () => {

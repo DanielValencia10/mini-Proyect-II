@@ -51,6 +51,9 @@ export function useWebRTC(
   const cameraStreamId = useRef<Map<string, string>>(new Map());
   // Stream local de pantalla que ESTE usuario está compartiendo (si aplica).
   const localScreenStreamRef = useRef<MediaStream | null>(null);
+  // Set de userIds que el servidor nos dice que están compartiendo pantalla.
+  // Se usa para decidir si activar el screen stream en ontrack.
+  const activeSharerIds = useRef<Set<string>>(new Set());
 
   const roomIdRef = useRef(roomId);
   const socketRef = useRef(socket);
@@ -177,29 +180,61 @@ export function useWebRTC(
         const screenTrack = localScreenStreamRef.current.getVideoTracks()[0];
         if (screenTrack) {
           screenTcvr.sender.replaceTrack(screenTrack);
-          screenTcvr.direction = "sendonly";
+          screenTcvr.direction = "sendrecv";
         }
       }
 
       pc.ontrack = (event) => {
-        const screenTcvr = screenTransceivers.current.get(remoteUserId);
-        const isScreen = event.transceiver === screenTcvr; // referencia exacta, no por índice
+        // Identificar pantalla compartida por REFERENCIA al transceiver que
+        // pre-creamos en createPeerConnection, NO por índice numérico.
+        const stream = event.streams[0];
+        const storedScreenTcvr = screenTransceivers.current.get(remoteUserId);
+        const knownCameraStreamId = cameraStreamId.current.get(remoteUserId);
+        const matchesScreenTransceiver =
+          storedScreenTcvr != null && event.transceiver === storedScreenTcvr;
+        const isScreen =
+          event.track.kind === "video" &&
+          (matchesScreenTransceiver ||
+            (activeSharerIds.current.has(remoteUserId) &&
+              knownCameraStreamId != null &&
+              stream?.id !== knownCameraStreamId));
+
+        console.log(`🔍 [ontrack] remoteUserId: ${remoteUserId}, kind: ${event.track.kind}, isScreen: ${isScreen}, matchesStoredTcvr: ${matchesScreenTransceiver}, streamId: ${stream?.id ?? "sin-stream"}, cameraStreamId: ${knownCameraStreamId ?? "sin-camara"}`);
 
         if (isScreen) {
+          // Solo activar el stream de pantalla si el track tiene datos
+          // activos (muted=false y readyState=live) o si sabemos que el
+          // usuario remoto realmente está compartiendo.
+          console.log(`🖥️ [WebRTC] Track de pantalla recibida en ontrack de ${remoteUserId} (muted: ${event.track.muted}, readyState: ${event.track.readyState})`);
           const track = event.track;
-          const screenStream = event.streams[0] ?? new MediaStream([track]);
+          const screenStream = stream ?? new MediaStream([track]);
 
-          const addScreenStream = () => {
-            console.log(`🖥️ [WebRTC] Pantalla compartida ACTIVA de ${remoteUserId}`);
+          // Solo mostrar la pantalla si el track está activo (no muted)
+          // O si el servidor nos dice que este usuario está compartiendo
+          const shouldActivate =
+            track.readyState === "live" &&
+            !track.muted &&
+            activeSharerIds.current.has(remoteUserId);
+          if (shouldActivate) {
             setRemoteScreenStreams((prev) => {
               const next = new Map(prev);
               next.set(remoteUserId, screenStream);
               return next;
             });
+          }
+
+          track.onunmute = () => {
+            console.log(`🖥️ [WebRTC] Track de pantalla UNMUTED de ${remoteUserId}`);
+            const activeStream = new MediaStream([track]);
+            setRemoteScreenStreams((prev) => {
+              const next = new Map(prev);
+              next.set(remoteUserId, activeStream);
+              return next;
+            });
           };
 
-          const removeScreenStream = () => {
-            console.log(`🖥️ [WebRTC] Pantalla compartida DETENIDA de ${remoteUserId}`);
+          track.onmute = () => {
+            console.log(`🖥️ [WebRTC] Track de pantalla MUTED de ${remoteUserId}`);
             setRemoteScreenStreams((prev) => {
               if (!prev.has(remoteUserId)) return prev;
               const next = new Map(prev);
@@ -208,26 +243,23 @@ export function useWebRTC(
             });
           };
 
-          // El track existe desde que se negocia el m-line, pero arranca MUTED
-          // hasta que el remoto realmente envía frames (es decir, hasta que
-          // realmente empieza a compartir). Si ya llega "unmuted" (caso raro),
-          // lo agregamos de una vez.
-          if (!track.muted) addScreenStream();
-
-          track.onunmute = addScreenStream;   // empieza a compartir de verdad
-          track.onmute = removeScreenStream;  // deja de compartir (replaceTrack(null))
-          track.onended = removeScreenStream; // PC cerrada / track.stop() real
+          track.onended = () => {
+            console.log(`🖥️ [WebRTC] Pantalla compartida finalizada (onended) de ${remoteUserId}`);
+            setRemoteScreenStreams((prev) => {
+              if (!prev.has(remoteUserId)) return prev;
+              const next = new Map(prev);
+              next.delete(remoteUserId);
+              return next;
+            });
+          };
 
           return;
         }
 
-        // Índices 0 y 1 → audio y video de cámara
         console.log(`🎵 [WebRTC] Track recibido: ${event.track.kind} de ${remoteUserId}`);
-        const stream = event.streams[0];
         if (!stream) return;
 
         setRemoteStreams((currentRemoteStreams) => {
-          const knownCameraStreamId = cameraStreamId.current.get(remoteUserId);
           if (!knownCameraStreamId) {
             cameraStreamId.current.set(remoteUserId, stream.id);
             if (currentRemoteStreams.some((s) => s.userId === remoteUserId))
@@ -237,6 +269,7 @@ export function useWebRTC(
           return currentRemoteStreams;
         });
       };
+
       pc.onicecandidate = (event) => {
         if (event.candidate && socket) {
           console.log(
@@ -253,6 +286,7 @@ export function useWebRTC(
       pc.onnegotiationneeded = async () => {
         try {
           if (pc.signalingState === "closed") return;
+          if (makingOffer.current.get(remoteUserId)) return;
           makingOffer.current.set(remoteUserId, true);
           await pc.setLocalDescription(); // 👈 sin argumentos: crea Y aplica la oferta de forma atómica
 
@@ -329,7 +363,9 @@ export function useWebRTC(
   const handleOffer = useCallback(
     async (data: { from: string; offer: RTCSessionDescriptionInit }) => {
       const remoteUserId = data.from;
-      const pc = peerConnections.current.get(remoteUserId);
+      const pc =
+        peerConnections.current.get(remoteUserId) ??
+        createPeerConnection(remoteUserId);
       if (!pc) return;
 
       const isPolite = currentUserId < remoteUserId;
@@ -369,7 +405,7 @@ export function useWebRTC(
         );
       }
     },
-    [currentUserId, roomId, socket, flushPendingCandidates],
+    [currentUserId, roomId, socket, flushPendingCandidates, createPeerConnection],
   );
 
   const handleAnswer = useCallback(
@@ -444,7 +480,30 @@ export function useWebRTC(
   // Respaldo del listener 'removetrack' de arriba: si por lo que sea el evento
   // de track no llega o se procesa distinto en algún navegador, esto asegura
   // que el estado se limpie igual en cuanto el backend confirma el stop.
+  const handleScreenShareStarted = useCallback((data: { userId: string }) => {
+    console.log(`🖥️ [Socket] El usuario ${data.userId} comenzó a compartir pantalla.`);
+    activeSharerIds.current.add(data.userId);
+    const pc = peerConnections.current.get(data.userId);
+    if (!pc) return;
+    
+    // Usar la referencia exacta del transceiver de pantalla que pre-creamos
+    const screenTcvr = screenTransceivers.current.get(data.userId);
+    const track = screenTcvr?.receiver?.track;
+    if (track && track.readyState === 'live' && !track.muted) {
+      console.log(`🖥️ [Socket] Track de pantalla encontrado para ${data.userId}, activando stream. muted: ${track.muted}`);
+      const screenStream = new MediaStream([track]);
+      setRemoteScreenStreams((prev) => {
+        const next = new Map(prev);
+        next.set(data.userId, screenStream);
+        return next;
+      });
+    } else {
+      console.log(`🖥️ [Socket] No se encontró track de pantalla activo para ${data.userId}. Se activará cuando llegue el track por ontrack.`);
+    }
+  }, []);
+
   const handleScreenShareStopped = useCallback((data: { userId: string }) => {
+    activeSharerIds.current.delete(data.userId);
     setRemoteScreenStreams((prev) => {
       if (!prev.has(data.userId)) return prev;
       const next = new Map(prev);
@@ -462,19 +521,23 @@ export function useWebRTC(
     socket.on("webrtc-offer", handleOffer);
     socket.on("webrtc-answer", handleAnswer);
     socket.on("webrtc-ice-candidate", handleIceCandidate);
+    socket.on("screen-share-started", handleScreenShareStarted);
     socket.on("screen-share-stopped", handleScreenShareStopped);
 
     socket.on("user-joined-call", (data) => {
       console.log("👤 user-joined-call", data.userId, "yo:", currentUserId);
 
       if (data.userId !== currentUserId) {
-        // 🛑 CANDADO 1: Si ya existe una conexión viva (no cerrada ni fallida), no la duplicar.
         const existingPc = peerConnections.current.get(data.userId);
-        if (existingPc && existingPc.signalingState !== "closed" && existingPc.connectionState !== "failed") {
-          console.log(
-            `⚠️ [WebRTC] Ignorando 'user-joined-call' para ${data.userId} porque ya hay una conexión activa.`,
-          );
-          return;
+        if (existingPc) {
+          console.log(`📡 [WebRTC] Cerrando conexión vieja existente para ${data.userId} debido a user-joined-call.`);
+          existingPc.close();
+          peerConnections.current.delete(data.userId);
+          screenTransceivers.current.delete(data.userId);
+          pendingCandidates.current.delete(data.userId);
+          cameraStreamId.current.delete(data.userId);
+          audioSenders.current.delete(data.userId);
+          videoSenders.current.delete(data.userId);
         }
 
         console.log("🚀 LLAMANDO A:", data.userId);
@@ -490,13 +553,16 @@ export function useWebRTC(
 
       data.userIds.forEach((userId) => {
         if (userId !== currentUserId) {
-          // 🛑 CANDADO 2: Si ya existe una conexión viva (no cerrada ni fallida), no la duplicar.
           const existingPc = peerConnections.current.get(userId);
-          if (existingPc && existingPc.signalingState !== "closed" && existingPc.connectionState !== "failed") {
-            console.log(
-              `⚠️ [WebRTC] Ignorando participante existente ${userId} porque ya está conectado.`,
-            );
-            return;
+          if (existingPc) {
+            console.log(`📡 [WebRTC] Cerrando conexión vieja existente para ${userId} debido a existing-call-participants.`);
+            existingPc.close();
+            peerConnections.current.delete(userId);
+            screenTransceivers.current.delete(userId);
+            pendingCandidates.current.delete(userId);
+            cameraStreamId.current.delete(userId);
+            audioSenders.current.delete(userId);
+            videoSenders.current.delete(userId);
           }
 
           callUser(userId);
@@ -529,6 +595,47 @@ export function useWebRTC(
       unpublishScreenTrack();
     });
 
+    // Cuando nos unimos, el servidor nos dice quién ya comparte pantalla
+    socket.on("screen-share-peer-joined", async (data: { userId: string }) => {
+      const screenTrack = localScreenStreamRef.current?.getVideoTracks()[0];
+      if (!screenTrack || screenTrack.readyState !== "live") return;
+      if (data.userId === currentUserId) return;
+
+      const pc = createPeerConnection(data.userId);
+      const screenTcvr =
+        screenTransceivers.current.get(data.userId) ?? pc.getTransceivers()[2];
+      if (!screenTcvr || pc.signalingState === "closed") return;
+
+      try {
+        await screenTcvr.sender.replaceTrack(screenTrack);
+        if (screenTcvr.direction !== "sendrecv") {
+          screenTcvr.direction = "sendrecv";
+        }
+        if (pc.signalingState !== "stable") return;
+
+        makingOffer.current.set(data.userId, true);
+        await pc.setLocalDescription(await pc.createOffer());
+        socketRef.current?.emit("webrtc-offer", {
+          roomId: roomIdRef.current,
+          offer: pc.localDescription,
+          to: data.userId,
+        });
+      } catch (err) {
+        console.error(`Error republicando pantalla para ${data.userId}:`, err);
+      } finally {
+        makingOffer.current.set(data.userId, false);
+      }
+    });
+
+    socket.on("active-screen-shares", (data: { userIds: string[] }) => {
+      console.log(`🖥️ [Socket] Pantallas activas recibidas del servidor:`, data.userIds);
+      data.userIds.forEach((uid) => {
+        activeSharerIds.current.add(uid);
+        // Intentar activar el stream si ya tenemos la PC y el transceiver
+        handleScreenShareStarted({ userId: uid });
+      });
+    });
+
     return () => {
       console.log(
         "🗑️ [useWebRTC] Removiendo listeners y LIMPIANDO conexiones fantasma (Strict Mode Shield).",
@@ -536,11 +643,15 @@ export function useWebRTC(
       socket.off("webrtc-offer", handleOffer);
       socket.off("webrtc-answer", handleAnswer);
       socket.off("webrtc-ice-candidate", handleIceCandidate);
+      socket.off("screen-share-started", handleScreenShareStarted);
       socket.off("screen-share-stopped", handleScreenShareStopped);
       socket.off("user-joined-call");
       socket.off("existing-call-participants");
       socket.off("user-left-call");
       socket.off("force-stop-screen-share");
+      socket.off("screen-share-peer-joined");
+      socket.off("active-screen-shares");
+      activeSharerIds.current.clear();
 
       pcs.forEach((pc) => {
         if (pc.signalingState !== "closed") {
@@ -557,7 +668,9 @@ export function useWebRTC(
     handleOffer,
     handleAnswer,
     handleIceCandidate,
+    handleScreenShareStarted,
     handleScreenShareStopped,
+    createPeerConnection,
     callUser,
   ]);
 
@@ -589,6 +702,27 @@ export function useWebRTC(
     console.log(`📣 [Acción] Solicitando unirse a llamada en sala: ${roomId}`);
     socket?.emit("join-call", { roomId });
   }, [socket, roomId]);
+
+  const renegotiatePeer = useCallback(
+    async (remoteUserId: string, pc: RTCPeerConnection) => {
+      if (pc.signalingState !== "stable") return;
+
+      try {
+        makingOffer.current.set(remoteUserId, true);
+        await pc.setLocalDescription(await pc.createOffer());
+        socketRef.current?.emit("webrtc-offer", {
+          roomId: roomIdRef.current,
+          offer: pc.localDescription,
+          to: remoteUserId,
+        });
+      } catch (err) {
+        console.error(`Error renegociando pantalla con ${remoteUserId}:`, err);
+      } finally {
+        makingOffer.current.set(remoteUserId, false);
+      }
+    },
+    [],
+  );
 
   const leaveCall = useCallback(() => {
     console.log("📣 [Acción] Abandonando llamada.");
@@ -626,43 +760,33 @@ export function useWebRTC(
     const track = stream.getVideoTracks()[0];
     if (!track) return;
 
-    // Usar el transceiver pre-creado (índice 2) en lugar de addTransceiver.
-    // Esto evita agregar nuevos m-lines y el error de reordenamiento de m-lines.
-    for (const [userId] of peerConnections.current.entries()) {
-      const pc = peerConnections.current.get(userId);
+    for (const [remoteUserId, pc] of peerConnections.current.entries()) {
       if (!pc || pc.signalingState === "closed") continue;
-      const screenTcvr = screenTransceivers.current.get(userId);
+      const screenTcvr = screenTransceivers.current.get(remoteUserId) || pc.getTransceivers()[2];
       if (!screenTcvr) continue;
       await screenTcvr.sender.replaceTrack(track);
-      if (screenTcvr.direction !== "sendonly") {
-        screenTcvr.direction = "sendonly"; // dispara onnegotiationneeded
+      if (screenTcvr.direction !== "sendrecv") {
+        screenTcvr.direction = "sendrecv";
       }
+      await renegotiatePeer(remoteUserId, pc);
     }
-  }, []);
+  }, [renegotiatePeer]);
 
-  /**
-   * unpublishScreenTrack
-   * ---------------------
-   * Quita el track de pantalla de todas las PeerConnection activas y
-   * renegocia. No detiene el MediaStream en sí (eso lo hace quien llamó a
-   * getDisplayMedia, típicamente el hook de arbitraje de screen share).
-   */
   const unpublishScreenTrack = useCallback(async () => {
     if (!localScreenStreamRef.current) return;
 
-    for (const [userId] of peerConnections.current.entries()) {
-      const pc = peerConnections.current.get(userId);
+    for (const [remoteUserId, pc] of peerConnections.current.entries()) {
       if (!pc || pc.signalingState === "closed") continue;
-      const screenTcvr = screenTransceivers.current.get(userId);
+      const screenTcvr = screenTransceivers.current.get(remoteUserId) || pc.getTransceivers()[2];
       if (!screenTcvr) continue;
       await screenTcvr.sender.replaceTrack(null);
       if (screenTcvr.direction !== "recvonly") {
-        screenTcvr.direction = "recvonly"; // dispara onnegotiationneeded
+        screenTcvr.direction = "recvonly";
       }
+      await renegotiatePeer(remoteUserId, pc);
     }
     localScreenStreamRef.current = null;
-  }, []);
-
+  }, [renegotiatePeer]);
   // En tu archivo useWebRTC.ts
   const startScreenShare = useCallback(
     async (existingStream?: MediaStream) => {
