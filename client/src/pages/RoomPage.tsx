@@ -37,10 +37,16 @@ interface VideoGridProps {
   currentUserId: string;
 }
 
-type ActiveScreen = {
+type GridItem = {
+  id: string;
+  type: "camera" | "screen";
   ownerId: string;
-  stream: MediaStream;
   isLocal: boolean;
+  stream: MediaStream | null;
+  name: string;
+  camOn?: boolean;
+  micOn?: boolean;
+  speaking?: boolean;
 };
 
 // ── Subcomponente: un <video> que se auto-conecta a su MediaStream ────────
@@ -87,163 +93,162 @@ function VideoGrid({
   localStream,
   camOn,
   micOn,
-  totalPersonas,
   screenStream,
   currentUserId,
 }: VideoGridProps) {
-  useEffect(() => {
-    if (remoteStreams) {
-      console.log("🔍 [DEBUG WebRTC] remoteStreams actuales:", remoteStreams);
-    }
-    if (screenStream) {
-      console.log("🖥️ [DEBUG WebRTC] screenStream actual:", screenStream);
-    }
-  }, [screenStream, remoteStreams]);
+  // ── 1. Unificar todos los medios en un solo arreglo de GridItem ──
+  const items: GridItem[] = useMemo(() => {
+    const list: GridItem[] = [];
 
-  // ── 1. Recolectar TODAS las pantallas activas (la propia + las remotas) ──
-  const activeScreens: ActiveScreen[] = useMemo(() => {
-    const screens: ActiveScreen[] = [];
+    // Cámara Local
+    list.push({
+      id: `cam-local`,
+      type: "camera",
+      ownerId: currentUserId || "local",
+      isLocal: true,
+      stream: camOn ? localStream : null,
+      name: "Tú",
+      camOn,
+      micOn,
+      speaking: false,
+    });
 
+    // Pantalla Local
     if (screenStream) {
-      screens.push({
-        ownerId: currentUserId || "local-screen",
-        stream: screenStream,
+      list.push({
+        id: `screen-local`,
+        type: "screen",
+        ownerId: currentUserId || "local",
         isLocal: true,
+        stream: screenStream,
+        name: "Tú (Pantalla)",
       });
     }
 
+    // Cámaras Remotas
+    remotePeers.forEach((peer) => {
+      const cameraStream =
+        remoteStreams.find((s) => s.userId === peer.id)?.stream ?? null;
+      list.push({
+        id: `cam-${peer.id}`,
+        type: "camera",
+        ownerId: peer.id,
+        isLocal: false,
+        stream: cameraStream,
+        name: peer.name,
+        camOn: peer.camOn,
+        micOn: peer.micOn,
+        speaking: peer.speaking,
+      });
+    });
+
+    // Pantallas Remotas
     for (const [ownerId, stream] of remoteScreenStreams.entries()) {
-      // 'local-screen' es un identificador interno que algunos flujos usan para
-      // marcar el stream propio dentro del mismo Map; si aparece, lo tratamos
-      // como local también, evitando duplicarlo con la entrada de screenStream.
-      if (ownerId === "local-screen") {
-        if (!screenStream) {
-          screens.push({
-            ownerId: currentUserId || "local-screen",
-            stream,
-            isLocal: true,
-          });
-        }
-        continue;
-      }
-      screens.push({ ownerId, stream, isLocal: false });
+      if (ownerId === "local-screen") continue;
+      const peerName = remotePeers.find((p) => p.id === ownerId)?.name || "Participante";
+      list.push({
+        id: `screen-${ownerId}`,
+        type: "screen",
+        ownerId,
+        isLocal: false,
+        stream,
+        name: `${peerName} (Pantalla)`,
+      });
     }
 
-    return screens;
-  }, [screenStream, remoteScreenStreams, currentUserId]);
+    return list;
+  }, [
+    currentUserId,
+    camOn,
+    localStream,
+    micOn,
+    screenStream,
+    remotePeers,
+    remoteStreams,
+    remoteScreenStreams,
+  ]);
 
-  // ── 2. Cuál pantalla se muestra en grande (el usuario puede elegir si hay varias) ──
-  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
+  // ── 2. Lógica de elemento fijado (Pinned) ──
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
 
   useEffect(() => {
-    const stillExists = activeScreens.some(
-      (s) => s.ownerId === selectedOwnerId,
-    );
-    if (!stillExists) {
-      setSelectedOwnerId(activeScreens[0]?.ownerId ?? null);
+    if (pinnedId && !items.some((i) => i.id === pinnedId)) {
+      setPinnedId(null);
     }
-  }, [activeScreens, selectedOwnerId]);
+  }, [items, pinnedId]);
 
-  const mainScreen =
-    activeScreens.find((s) => s.ownerId === selectedOwnerId) ??
-    activeScreens[0] ??
-    null;
-  const otherScreens = activeScreens.filter(
-    (s) => s.ownerId !== mainScreen?.ownerId,
-  );
+  const firstScreenId = items.find((i) => i.type === "screen")?.id;
+  const effectivePinnedId = pinnedId || firstScreenId || null;
 
-  const getOwnerName = (ownerId: string, isLocal: boolean) => {
-    if (isLocal) return "Tú";
-    return remotePeers.find((p) => p.id === ownerId)?.name || "Participante";
-  };
+  const pinnedItem = items.find((i) => i.id === effectivePinnedId) ?? null;
+  const unpinnedItems = items.filter((i) => i.id !== effectivePinnedId);
 
   // Render helpers
-  const renderLocalCard = (className?: string) => {
-    const streamParaMiCard = camOn ? localStream : null;
-    return (
-      <ParticipantCard
-        name="Tú"
-        speaking={false}
-        stream={streamParaMiCard}
-        isLocal={true}
-        className={className}
-        micOn={micOn}
-      />
-    );
-  };
-
-  const renderRemoteCard = (peer: (typeof remotePeers)[number]) => {
-    const cameraStream =
-      remoteStreams.find((s) => s.userId === peer.id)?.stream ?? null;
-    return (
-      <ParticipantCard
-        key={peer.id}
-        name={peer.name}
-        speaking={peer.speaking}
-        stream={cameraStream}
-        camOn={peer.camOn}
-        isLocal={false}
-        micOn={peer.micOn}
-      />
-    );
-  };
-
-  // ==========================================
-  // CASO ESPECIAL: UNA O MÁS PERSONAS COMPARTEN PANTALLA
-  // ==========================================
-  if (mainScreen) {
-    return (
-      <div className="flex flex-col lg:flex-row gap-4 w-full h-full items-stretch">
-        {/* Columna principal: pantalla grande + miniaturas de otras pantallas (si hay más de una) */}
-        <div className="flex-1 min-w-0 flex flex-col gap-3">
-          <div className="flex-1 min-h-[300px] bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
-            <ScreenVideo stream={mainScreen.stream} />
-            <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-md text-sm">
-              Pantalla de {getOwnerName(mainScreen.ownerId, mainScreen.isLocal)}
-            </div>
-            {activeScreens.length > 1 && (
-              <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-md text-xs">
-                {activeScreens.length} pantallas compartidas
-              </div>
-            )}
-          </div>
-
-          {/* Miniaturas de las demás pantallas activas, clicables para ponerlas en grande */}
-          {otherScreens.length > 0 && (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {otherScreens.map((screen) => (
-                <button
-                  key={screen.ownerId}
-                  onClick={() => setSelectedOwnerId(screen.ownerId)}
-                  className="relative w-40 aspect-video flex-shrink-0 rounded-lg overflow-hidden border-2 border-gray-700 hover:border-cyan-500 transition-colors"
-                  title={`Ver pantalla de ${getOwnerName(screen.ownerId, screen.isLocal)} en grande`}
-                >
-                  <ScreenVideo
-                    stream={screen.stream}
-                    className="w-full h-full object-cover"
-                  />
-                  <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[11px] px-1.5 py-0.5 rounded">
-                    {getOwnerName(screen.ownerId, screen.isLocal)}
-                  </span>
-                </button>
-              ))}
+  const renderItemCard = (item: GridItem, className?: string, hideNameOverlay = false) => {
+    if (item.type === "screen") {
+      return (
+        <div className={`relative w-full h-full bg-black flex items-center justify-center rounded-xl overflow-hidden ${className || ""}`}>
+          {item.stream ? (
+            <ScreenVideo stream={item.stream} className="w-full h-full object-contain" />
+          ) : (
+             <div className="text-gray-500">Cargando pantalla...</div>
+          )}
+          {!hideNameOverlay && (
+            <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white px-2 py-1 rounded text-xs pointer-events-none">
+              {item.name}
             </div>
           )}
         </div>
+      );
+    } else {
+      return (
+        <ParticipantCard
+          name={item.name}
+          speaking={item.speaking ?? false}
+          stream={item.stream}
+          camOn={item.camOn ?? false}
+          isLocal={item.isLocal}
+          micOn={item.micOn ?? false}
+          className={`w-full h-full ${className || ""}`}
+        />
+      );
+    }
+  };
 
-        {/* Sidebar con cámaras de todos los presentes (independiente de quién comparte pantalla) */}
-        <div className="w-full lg:w-72 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-y-auto p-1 flex-shrink-0">
-          <div className="w-48 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md">
-            {renderLocalCard("w-full h-full object-cover")}
+  // ==========================================
+  // CASO A: HAY UN ELEMENTO FIJADO (Google Meet Style)
+  // ==========================================
+  if (pinnedItem) {
+    return (
+      <div className="flex flex-col lg:flex-row gap-4 w-full h-full items-stretch">
+        {/* Columna principal gigante */}
+        <div className="flex-1 min-w-0 flex flex-col relative bg-black rounded-xl overflow-hidden group">
+          {renderItemCard(pinnedItem, "", true)}
+          <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-md text-sm pointer-events-none">
+            {pinnedItem.name}
           </div>
-
-          {remotePeers.map((peer) => (
-            <div
-              key={peer.id}
-              className="w-48 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md"
+          {pinnedId && (
+            <button
+              onClick={() => setPinnedId(null)}
+              className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-md text-sm transition-opacity opacity-0 group-hover:opacity-100"
             >
-              {renderRemoteCard(peer)}
-            </div>
+              Desfijar
+            </button>
+          )}
+        </div>
+
+        {/* Sidebar con TODOS los demás participantes (cámaras y pantallas adicionales) */}
+        <div className="w-full lg:w-72 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-y-auto p-1 flex-shrink-0">
+          {unpinnedItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setPinnedId(item.id)}
+              className="w-48 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md relative group border-2 border-transparent hover:border-cyan-500 transition-colors text-left focus:outline-none"
+              title={`Fijar a ${item.name}`}
+            >
+              <div className="absolute inset-0 z-10 cursor-pointer"></div>
+              {renderItemCard(item, "pointer-events-none")}
+            </button>
           ))}
         </div>
       </div>
@@ -251,11 +256,10 @@ function VideoGrid({
   }
 
   // ==========================================
-  // ESCENARIOS NORMALES (SOLO CÁMARAS, NADIE COMPARTE PANTALLA)
+  // CASO B: NADIE ESTÁ FIJADO Y NO HAY PANTALLAS
   // ==========================================
 
-  // Caso 1: cargando
-  if (remotePeers.length === 0 && !localStream) {
+  if (items.length <= 1 && !localStream) {
     return (
       <p className="text-gray-500 animate-pulse">
         Iniciando medios y buscando peers...
@@ -263,37 +267,44 @@ function VideoGrid({
     );
   }
 
-  // Caso 2: only me
-  if (remotePeers.length === 0 && localStream) {
+  if (items.length === 1) {
     return (
       <div className="w-full h-full max-w-5xl aspect-video">
-        {renderLocalCard()}
+        {renderItemCard(items[0])}
       </div>
     );
   }
 
-  // Caso 3: 1 user remoto → pantalla completa + PiP
-  if (remotePeers.length === 1) {
-    const peer = remotePeers[0];
-    return (
-      <div className="w-full h-full relative flex items-center justify-center">
-        <div className="w-full h-full max-w-5xl aspect-video">
-          {renderRemoteCard(peer)}
-        </div>
-        <div className="absolute bottom-4 right-4 w-32 h-20 sm:w-48 sm:h-32 shadow-2xl rounded-2xl overflow-hidden border border-gray-700/60 z-10 transition-all hover:scale-105">
-          {renderLocalCard("w-full h-full")}
-        </div>
-      </div>
-    );
+  if (items.length === 2) {
+    const local = items.find((i) => i.isLocal);
+    const remote = items.find((i) => !i.isLocal);
+    
+    if (local && remote) {
+        return (
+          <div className="w-full h-full relative flex items-center justify-center">
+            <div className="w-full h-full max-w-5xl aspect-video">
+              {renderItemCard(remote)}
+            </div>
+            <div className="absolute bottom-4 right-4 w-32 h-20 sm:w-48 sm:h-32 shadow-2xl rounded-2xl overflow-hidden border border-gray-700/60 z-10 transition-all hover:scale-105">
+              {renderItemCard(local)}
+            </div>
+          </div>
+        );
+    }
   }
 
-  // Caso 4: ≥ 2 users → grid normal de cámaras
   return (
     <div
-      className={`grid ${getGridClass(totalPersonas)} gap-4 w-full h-full max-w-6xl items-center justify-center`}
+      className={`grid ${getGridClass(items.length)} gap-4 w-full h-full max-w-6xl items-center justify-center`}
     >
-      {renderLocalCard()}
-      {remotePeers.map(renderRemoteCard)}
+      {items.map((item) => (
+        <div key={item.id} className="w-full h-full aspect-video rounded-xl overflow-hidden shadow-md relative group">
+           <div className="absolute inset-0 z-10 cursor-pointer hidden group-hover:block bg-black/10" onClick={() => setPinnedId(item.id)}>
+              <div className="absolute top-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs">Fijar</div>
+           </div>
+           {renderItemCard(item)}
+        </div>
+      ))}
     </div>
   );
 }
