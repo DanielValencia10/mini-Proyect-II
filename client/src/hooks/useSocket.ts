@@ -5,6 +5,7 @@ import useAuthStore from '../stores/useAuthStore';
 interface Participant {
     id: string;
     name: string;
+    avatar?: string;
     speaking: boolean;
     camOn: boolean;
     micOn: boolean;
@@ -120,6 +121,7 @@ export function useSocket(roomId: string) {
             roomId,
             userId: uid,
             userName: displayName,
+            avatar: userLogged?.photoURL ?? "",
         });
 
         const handleParticipants = (data: Participant[]) => {

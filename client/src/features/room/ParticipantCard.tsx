@@ -1,6 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, VideoOff } from "lucide-react";
 
+const AVATAR_COLORS = [
+  "bg-blue-700",
+  "bg-purple-700",
+  "bg-rose-700",
+  "bg-amber-700",
+  "bg-green-700",
+  "bg-cyan-700",
+  "bg-pink-700",
+  "bg-indigo-700",
+];
+
+function nameToColor(name: string): string {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
 interface Props {
   name: string;
   speaking: boolean;
@@ -9,6 +26,7 @@ interface Props {
   camOn?: boolean;
   className?: string;
   micOn?: boolean;
+  avatar?: string;
 }
 
 export function ParticipantCard({
@@ -19,6 +37,7 @@ export function ParticipantCard({
   camOn,
   className = "",
   micOn,
+  avatar,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVideoActive, setIsVideoActive] = useState(false);
@@ -126,46 +145,55 @@ export function ParticipantCard({
       />
 
       {!isVideoActive && (
-        <div
-          className={`relative z-10 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-lg sm:text-xl font-bold transition-all
-            ${
-              speaking
-                ? "bg-cyan-500 text-white shadow-[0_0_15px_rgba(34,211,238,0.6)]"
-                : "bg-gray-700 text-gray-300"
-            }`}
-        >
-          {initials}
-        </div>
+        avatar ? (
+          <img
+            src={avatar}
+            alt={name}
+            className={`relative z-10 w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full object-cover transition-all
+              ${speaking ? "ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.6)]" : ""}`}
+          />
+        ) : (
+          <div
+            className={`relative z-10 w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center text-sm sm:text-base md:text-lg font-bold transition-all
+              ${
+                speaking
+                  ? "bg-cyan-500 text-white shadow-[0_0_15px_rgba(34,211,238,0.6)]"
+                  : `${nameToColor(name)} text-white`
+              }`}
+          >
+            {initials}
+          </div>
+        )
       )}
 
       {/* Indicadores de micrófono y cámara: aparecen en la esquina superior derecha */}
-      <div className="absolute top-2.5 right-2.5 z-10 flex gap-2">
+      <div className="absolute top-1 right-1 sm:top-2.5 sm:right-2.5 z-10 flex gap-1 sm:gap-2">
         <div
-          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-colors
+          className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors
                       ${isMicOn ? "bg-gray-950/40 backdrop-blur-sm" : "bg-red-600/90"}`}
           title={isMicOn ? "Micrófono activado" : "Micrófono silenciado"}
         >
           {isMicOn ? (
-            <Mic className="w-3.5 h-3.5 text-white" />
+            <Mic className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" />
           ) : (
-            <MicOff className="w-3.5 h-3.5 text-white" />
+            <MicOff className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" />
           )}
         </div>
         {!isCamOn && (
           <div
-            className="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center bg-red-600/90 transition-colors"
+            className="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center bg-red-600/90 transition-colors"
             title="Cámara apagada"
           >
-            <VideoOff className="w-3.5 h-3.5 text-white" />
+            <VideoOff className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" />
           </div>
         )}
       </div>
 
-      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-10 bg-gray-950/40 backdrop-blur-sm p-1.5 px-2.5 rounded-xl">
-        <span className="text-white text-xs sm:text-sm font-medium truncate drop-shadow flex items-center gap-1.5">
+      <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 flex items-center justify-between z-10 bg-gray-950/40 backdrop-blur-sm p-1 sm:p-1.5 px-1.5 sm:px-2.5 rounded-lg sm:rounded-xl">
+        <span className="text-white text-[10px] sm:text-xs font-medium truncate drop-shadow flex items-center gap-1">
           {name}
-          {!isMicOn && <MicOff className="w-3 h-3 text-red-400 shrink-0" />}
-          {!isCamOn && <VideoOff className="w-3 h-3 text-red-400 shrink-0" />}
+          {!isMicOn && <MicOff className="w-2 h-2 sm:w-3 sm:h-3 text-red-400 shrink-0" />}
+          {!isCamOn && <VideoOff className="w-2 h-2 sm:w-3 sm:h-3 text-red-400 shrink-0" />}
         </span>
         {speaking && (
           <span className="flex gap-0.5 items-end h-4 ml-2 shrink-0">

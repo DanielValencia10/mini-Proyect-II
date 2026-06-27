@@ -188,7 +188,7 @@ export function registerWebRTCHandlers(io: Server) {
             console.log(`🚪 [WebRTC Backend] El usuario [${userId}] abandonó voluntariamente la llamada de la sala [${roomId}].`);
 
             socket.leave(`call:${roomId}`);
-            socket.to(roomId).emit('user-left-call', {
+            socket.to(`call:${roomId}`).emit('user-left-call', {
                 userId,
             });
 
@@ -405,13 +405,17 @@ export function registerWebRTCHandlers(io: Server) {
         socket.on('disconnect', () => {
             console.log(`🔌 [WebRTC Backend] Socket desconectado del handler de streaming. ID: ${socket.id}, UID: ${socket.data.userId}`);
 
-            // Limpieza de screen sharing ante desconexión abrupta (sin leave-call previo):
-            // se recorren las salas de llamada en las que estaba este socket y, si en
-            // alguna figuraba como sharer activo, se notifica y se limpia el estado.
             const userId = socket.data.userId;
             for (const room of socket.rooms) {
                 if (room.startsWith('call:')) {
                     const roomId = room.replace('call:', '');
+
+                    // Notificar a los demás participantes de la llamada que este usuario se fue,
+                    // para que limpien su PeerConnection y tile inmediatamente.
+                    socket.to(room).emit('user-left-call', { userId });
+                    console.log(`🚪 [WebRTC Backend] Desconexión abrupta: notificando 'user-left-call' para [${userId}] en sala [${roomId}].`);
+
+                    // Limpiar pantalla compartida si aplica.
                     if (getActiveSharers(roomId).has(userId)) {
                         stopSharing(roomId, userId);
                         socket.to(room).emit('screen-share-stopped', { userId, forced: false });
