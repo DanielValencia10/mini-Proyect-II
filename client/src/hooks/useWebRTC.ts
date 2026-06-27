@@ -170,7 +170,7 @@ export function useWebRTC(
       // orden [audio, video-cámara, video-pantalla], eliminando el error de
       // "m-lines order mismatch" que ocurría al agregar un transceiver nuevo
       // después de la negociación inicial.
-      const screenTcvr = pc.addTransceiver("video", { direction: "inactive" });
+      const screenTcvr = pc.addTransceiver("video", { direction: "recvonly" });
       screenTransceivers.current.set(remoteUserId, screenTcvr);
 
       if (localScreenStreamRef.current) {
@@ -643,8 +643,8 @@ export function useWebRTC(
       const screenTcvr = screenTransceivers.current.get(userId);
       if (!screenTcvr) continue;
       await screenTcvr.sender.replaceTrack(null);
-      if (screenTcvr.direction !== "inactive") {
-        screenTcvr.direction = "inactive"; // dispara onnegotiationneeded
+      if (screenTcvr.direction !== "recvonly") {
+        screenTcvr.direction = "recvonly"; // dispara onnegotiationneeded
       }
     }
     localScreenStreamRef.current = null;
