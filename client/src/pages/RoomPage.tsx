@@ -330,6 +330,8 @@ function RoomPage() {
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const pendingScreenStreamRef = useRef<MediaStream | null>(null);
+  const [incomingShareRequest, setIncomingShareRequest] = useState<{ requesterId: string, requesterName: string } | null>(null);
 
   // Sincronizar referencia del stream local para limpiezas futuras
   useEffect(() => {
@@ -431,16 +433,6 @@ function RoomPage() {
     startScreenShare,
   } = useWebRTC(id ?? "", localStream, socket, currentUserId);
 
-  // ── Reiniciar WebRTC si cambia el stream (ej. se recuperan permisos) ─
-  useEffect(() => {
-    if (devicesReady && localStream && socket) {
-      console.log(
-        "🔄 [RoomPage] localStream actualizado tras cambio de permisos. Reiniciando conexión WebRTC.",
-      );
-      leaveCall();
-      joinCall();
-    }
-  }, [localStream, devicesReady, socket, leaveCall, joinCall]);
 
   // ── Memoización de derivados ───────────────────────────────────────────
   const remotePeers = useMemo(
@@ -534,39 +526,61 @@ function RoomPage() {
       );
 
       try {
-        // 🚀 EJECUTAMOS LA CAPTURA DENTRO DEL HOOK
-        const stream = await startScreenShare();
-
-        // 💡 IMPORTANTE: Si el hook captura el stream pero no lo devuelve,
-        // revisa useWebRTC.ts para asegurarte de que tenga un 'return stream;' al final del try.
-        if (stream) {
-          console.log("📺 Stream de pantalla obtenido con éxito:", stream.id);
-          setScreenStream(stream);
-          screenStreamRef.current = stream;
-          setRoomScreenSharing(true);
-
-          // Escuchamos el botón nativo de "Dejar de compartir" de la barra de Chrome
-          stream.getVideoTracks()[0].onended = () => {
-            console.log(
-              "🖥️  [Browser] Pantalla finalizada desde el control nativo.",
-            );
-            setScreenStream(null);
-            screenStreamRef.current = null;
-            setRoomScreenSharing(false);
-          };
+        const stream = pendingScreenStreamRef.current;
+        if (!stream) {
+            console.warn("⚠️ [Screen Share] Se otorgó permiso pero no hay stream pendiente.");
+            return;
         }
+
+        console.log("📺 Stream de pantalla obtenido con éxito:", stream.id);
+        setScreenStream(stream);
+        screenStreamRef.current = stream;
+        setRoomScreenSharing(true);
+
+        await startScreenShare(stream);
+
+        // Escuchamos el botón nativo de "Dejar de compartir" de la barra de Chrome
+        stream.getVideoTracks()[0].onended = () => {
+          console.log(
+            "🖥️  [Browser] Pantalla finalizada desde el control nativo.",
+          );
+          setScreenStream(null);
+          screenStreamRef.current = null;
+          setRoomScreenSharing(false);
+          socket.emit("stop-screen-share", { roomId: id });
+        };
       } catch (error) {
         console.error(
           "❌ Error en el flujo coordinado de pantalla compartida:",
           error,
         );
+      } finally {
+        pendingScreenStreamRef.current = null;
       }
     };
 
+    const handleDenied = (data: { reason: string }) => {
+        console.warn(`🚫 [Screen Share] Permiso denegado: ${data.reason}`);
+        if (pendingScreenStreamRef.current) {
+            pendingScreenStreamRef.current.getTracks().forEach((t) => t.stop());
+            pendingScreenStreamRef.current = null;
+        }
+        alert(`No se pudo compartir pantalla: ${data.reason}`);
+    };
+
+    const handleRequestFromUser = (data: { requesterId: string, requesterName: string }) => {
+        console.log(`⚠️ [Screen Share] Petición entrante de: ${data.requesterName}`);
+        setIncomingShareRequest({ requesterId: data.requesterId, requesterName: data.requesterName });
+    };
+
     socket.on("screen-share-granted", handleGranted);
+    socket.on("screen-share-denied", handleDenied);
+    socket.on("screen-share-request-from-user", handleRequestFromUser);
 
     return () => {
       socket.off("screen-share-granted", handleGranted);
+      socket.off("screen-share-denied", handleDenied);
+      socket.off("screen-share-request-from-user", handleRequestFromUser);
     };
   }, [socket, id, startScreenShare, setRoomScreenSharing]);
 
@@ -648,37 +662,31 @@ function RoomPage() {
     if (!screenSharing) {
       console.log("➡️ [UI] Solicitando permiso al backend...");
       try {
-        // 🚀 CAPTURA DIRECTA EN LA ROOM PAGE (Evita que screenStream se quede null)
+        // 🚀 CAPTURA DIRECTA EN LA ROOM PAGE
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
           audio: false,
         });
 
-        console.log("🖥️ [RoomPage] Pantalla capturada con éxito:", stream.id);
+        console.log("🖥️ [RoomPage] Pantalla capturada en espera de aprobación:", stream.id);
 
-        // Guardamos en los estados de la página inmediatamente
-        setScreenStream(stream);
-        screenStreamRef.current = stream;
-        setRoomScreenSharing(true);
+        // Guardamos en estado pendiente. Si conceden permiso, lo publicaremos.
+        pendingScreenStreamRef.current = stream;
 
-        // Enviamos el stream al hook useWebRTC para que lo transmita a los peers
-        // Nota: Si tu startScreenShare actual no acepta parámetros, pasa el stream dentro de una función o adáptalo.
-        await startScreenShare(stream);
-
-        // Escuchar el botón nativo de "Dejar de compartir" de Chrome/Firefox
+        // Escuchar si el usuario cancela desde el navegador antes de que aprueben
         stream.getVideoTracks()[0].onended = () => {
-          console.log(
-            "🖥️ [Browser] Compartir pantalla finalizado de forma nativa.",
-          );
-          stream.getTracks().forEach((t) => t.stop());
-          socket.emit("stop-screen-share", { roomId: id });
-          setScreenStream(null);
-          screenStreamRef.current = null;
-          setRoomScreenSharing(false);
+          pendingScreenStreamRef.current = null;
+          // Opcionalmente notificar al servidor que se canceló la petición
         };
+
+        // Solicitar permiso al servidor (turnos)
+        socket.emit("request-screen-share", { 
+            roomId: id, 
+            userName: userLogged?.displayName 
+        });
+
       } catch (err) {
         console.error("❌ Error al capturar pantalla en la UI:", err);
-        socket.emit("stop-screen-share", { roomId: id });
       }
     } else {
       // Apagado manual desde el botón de la app
@@ -689,6 +697,17 @@ function RoomPage() {
       screenStreamRef.current = null;
       setRoomScreenSharing(false);
     }
+  };
+
+  const handleRespondToShareRequest = (action: 'accept' | 'reject') => {
+      if (!incomingShareRequest || !socket || !id) return;
+      
+      socket.emit("screen-share-response", {
+          roomId: id,
+          requesterId: incomingShareRequest.requesterId,
+          action
+      });
+      setIncomingShareRequest(null);
   };
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -818,6 +837,31 @@ function RoomPage() {
           initDevices();
         }}
       />
+
+      {incomingShareRequest && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-white mb-2">Solicitud de Pantalla</h3>
+            <p className="text-gray-300 mb-6 text-sm">
+              <strong className="text-cyan-400">{incomingShareRequest.requesterName}</strong> desea compartir pantalla. Si aceptas, tu transmisión actual se detendrá. ¿Aceptas?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => handleRespondToShareRequest('reject')}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                Rechazar
+              </button>
+              <button 
+                onClick={() => handleRespondToShareRequest('accept')}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-cyan-600 text-white hover:bg-cyan-500 transition-colors shadow-lg shadow-cyan-500/20"
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

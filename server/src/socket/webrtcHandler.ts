@@ -1,5 +1,4 @@
 import { Server, Socket } from 'socket.io';
-import RoomDao from '../dao/RoomDao'; // ajusta la ruta a donde realmente esté tu RoomDao
 
 interface RTCSessionDescriptionInit {
     type: 'offer' | 'answer' | 'pranswer' | 'rollback';
@@ -86,24 +85,6 @@ function grantScreenShare(
     io.to(`call:${roomId}`)
         .except(userId)
         .emit('screen-share-started', { userId, roomId });
-}
-
-/**
- * isRoomHost
- * ----------
- * Consulta el RoomDao real para determinar si `userId` es el anfitrión
- * (ownerId) de la sala `roomId`. Es asíncrona porque RoomDao.getRoomById
- * hace una lectura a Firestore.
- */
-const roomDao = new RoomDao();
-
-async function isRoomHost(roomId: string, userId: string): Promise<boolean> {
-    const result = await roomDao.getRoomById(roomId);
-    if (!result.success || !result.data) {
-        console.warn(`⚠️ [Screen Share] isRoomHost: no se encontró la sala [${roomId}] al verificar anfitrión.`);
-        return false;
-    }
-    return result.data.ownerId === userId;
 }
 
 export function registerWebRTCHandlers(io: Server) {
@@ -383,7 +364,7 @@ export function registerWebRTCHandlers(io: Server) {
          * @emits screen-share-conflict  → al solicitante, si hay conflicto.
          *        Payload: { activeSharers: string[], isHost: boolean }
          */
-        socket.on('request-screen-share', async ({ roomId }: { roomId: string }) => {
+        socket.on('request-screen-share', async ({ roomId, userName }: { roomId: string, userName?: string }) => {
             const userId = socket.data.userId;
             const activeSharers = getActiveSharers(roomId);
 
@@ -394,64 +375,51 @@ export function registerWebRTCHandlers(io: Server) {
                 return;
             }
 
-            // Ya hay alguien compartiendo: se resuelve según el rol del solicitante.
-            const isHost = await isRoomHost(roomId, userId);
+            // Ya hay alguien compartiendo: se envía solicitud de aprobación al actual.
+            const currentSharer = Array.from(activeSharers)[0];
+            
+            console.log(`⚠️ [Screen Share] Pidiendo permiso a ${currentSharer} de parte de ${userId}.`);
 
-            console.log(`⚠️ [Screen Share] Conflicto detectado para ${userId}. ¿Es anfitrión?`, isHost);
+            // Notificamos al que solicita que debe esperar
+            socket.emit('screen-share-pending', { message: 'Esperando aprobación del usuario actual...' });
 
-            socket.emit('screen-share-conflict', {
-                activeSharers: Array.from(activeSharers),
-                isHost,
+            // Enviamos petición al usuario que está compartiendo
+            io.to(currentSharer).emit('screen-share-request-from-user', {
+                roomId,
+                requesterId: userId,
+                requesterName: userName || 'Un participante'
             });
         });
 
         /**
-         * Evento: resolve-screen-share-conflict
+         * Evento: screen-share-response
          * ----------------------------------------
          * Dirección: Cliente → Servidor
-         * Respuesta del cliente tras recibir `screen-share-conflict`.
-         *
-         * @param payload.roomId  ID de la sala/llamada.
-         * @param payload.action  'proceed'    → compartir junto con el/los que ya comparten (permitido a cualquiera).
-         *                        'cancel'     → el solicitante decide no compartir.
-         *                        'stop-other' → SOLO anfitrión: fuerza a detener el compartir de los demás y toma su lugar.
-         *
-         * @emits screen-share-granted        → al solicitante, si la acción procede.
-         * @emits force-stop-screen-share     → a cada sharer activo, si action = 'stop-other'.
-         * @emits screen-share-stopped        → a `call:${roomId}`, por cada sharer forzado a detenerse.
+         * Respuesta del usuario que está compartiendo actualmente (Usuario A)
+         * a la solicitud de otro usuario (Usuario B).
          */
-        socket.on('resolve-screen-share-conflict', async (data: {
-            roomId: string;
-            action: 'proceed' | 'cancel' | 'stop-other';
-        }) => {
-            const userId = socket.data.userId;
-            const { roomId, action } = data;
+        socket.on('screen-share-response', ({ roomId, requesterId, action }: { roomId: string, requesterId: string, action: 'accept' | 'reject' }) => {
+            const userId = socket.data.userId; // Este es el Usuario A
+            
+            console.log(`🧭 [Screen Share] ${userId} resolvió petición de ${requesterId} en [${roomId}] con acción: ${action}`);
 
-            console.log(`🧭 [Screen Share] ${userId} resolvió conflicto en [${roomId}] con acción: ${action}`);
-
-            if (action === 'cancel') {
-                console.log(`🚫 [Screen Share] ${userId} canceló su solicitud de compartir pantalla.`);
-                return;
+            if (action === 'accept') {
+                // Forzamos detener la pantalla de Usuario A
+                console.log(`🛑 [Screen Share] ${userId} acepta. Deteniendo su transmisión.`);
+                io.to(userId).emit('force-stop-screen-share', { by: requesterId });
+                stopSharing(roomId, userId);
+                socket.to(`call:${roomId}`).emit('screen-share-stopped', { userId, forced: true });
+                
+                // Concedemos el permiso al Usuario B
+                grantScreenShare(io, roomId, requesterId);
+            } else {
+                // Rechazado: notificamos al Usuario B
+                console.log(`🚫 [Screen Share] ${userId} rechazó la solicitud de ${requesterId}.`);
+                io.to(requesterId).emit('screen-share-denied', {
+                    roomId,
+                    reason: 'El usuario actual rechazó tu solicitud.'
+                });
             }
-
-            if (action === 'stop-other') {
-                if (!(await isRoomHost(roomId, userId))) {
-                    console.warn(`⛔ [Screen Share] ${userId} intentó forzar 'stop-other' sin ser anfitrión. Acción ignorada.`);
-                    socket.emit('screen-share-error', { reason: 'NOT_HOST' });
-                    return;
-                }
-
-                const activeSharers = getActiveSharers(roomId);
-                for (const otherUserId of Array.from(activeSharers)) {
-                    console.log(`🛑 [Screen Share] Anfitrión ${userId} fuerza detener compartir de ${otherUserId}.`);
-                    io.to(otherUserId).emit('force-stop-screen-share', { by: userId });
-                    stopSharing(roomId, otherUserId);
-                    socket.to(`call:${roomId}`).emit('screen-share-stopped', { userId: otherUserId, forced: true });
-                }
-            }
-
-            // action === 'proceed' || luego de 'stop-other'
-            grantScreenShare(io, roomId, userId);
         });
 
         /**
