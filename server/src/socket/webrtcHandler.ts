@@ -364,62 +364,10 @@ export function registerWebRTCHandlers(io: Server) {
          * @emits screen-share-conflict  → al solicitante, si hay conflicto.
          *        Payload: { activeSharers: string[], isHost: boolean }
          */
-        socket.on('request-screen-share', async ({ roomId, userName }: { roomId: string, userName?: string }) => {
+        socket.on('request-screen-share', async ({ roomId }: { roomId: string }) => {
             const userId = socket.data.userId;
-            const activeSharers = getActiveSharers(roomId);
-
-            console.log(`🖥️ [Screen Share] ${userId} solicita compartir pantalla en [${roomId}]. Activos: [${Array.from(activeSharers)}]`);
-
-            if (activeSharers.size === 0) {
-                grantScreenShare(io, roomId, userId);
-                return;
-            }
-
-            // Ya hay alguien compartiendo: se envía solicitud de aprobación al actual.
-            const currentSharer = Array.from(activeSharers)[0];
-            
-            console.log(`⚠️ [Screen Share] Pidiendo permiso a ${currentSharer} de parte de ${userId}.`);
-
-            // Notificamos al que solicita que debe esperar
-            socket.emit('screen-share-pending', { message: 'Esperando aprobación del usuario actual...' });
-
-            // Enviamos petición al usuario que está compartiendo
-            io.to(currentSharer).emit('screen-share-request-from-user', {
-                roomId,
-                requesterId: userId,
-                requesterName: userName || 'Un participante'
-            });
-        });
-
-        /**
-         * Evento: screen-share-response
-         * ----------------------------------------
-         * Dirección: Cliente → Servidor
-         * Respuesta del usuario que está compartiendo actualmente (Usuario A)
-         * a la solicitud de otro usuario (Usuario B).
-         */
-        socket.on('screen-share-response', ({ roomId, requesterId, action }: { roomId: string, requesterId: string, action: 'accept' | 'reject' }) => {
-            const userId = socket.data.userId; // Este es el Usuario A
-            
-            console.log(`🧭 [Screen Share] ${userId} resolvió petición de ${requesterId} en [${roomId}] con acción: ${action}`);
-
-            if (action === 'accept') {
-                // Forzamos detener la pantalla de Usuario A
-                console.log(`🛑 [Screen Share] ${userId} acepta. Deteniendo su transmisión.`);
-                io.to(userId).emit('force-stop-screen-share', { by: requesterId });
-                stopSharing(roomId, userId);
-                socket.to(`call:${roomId}`).emit('screen-share-stopped', { userId, forced: true });
-                
-                // Concedemos el permiso al Usuario B
-                grantScreenShare(io, roomId, requesterId);
-            } else {
-                // Rechazado: notificamos al Usuario B
-                console.log(`🚫 [Screen Share] ${userId} rechazó la solicitud de ${requesterId}.`);
-                io.to(requesterId).emit('screen-share-denied', {
-                    roomId,
-                    reason: 'El usuario actual rechazó tu solicitud.'
-                });
-            }
+            console.log(`🖥️ [Screen Share] ${userId} solicita compartir pantalla en [${roomId}]. Otorgando permiso inmediatamente.`);
+            grantScreenShare(io, roomId, userId);
         });
 
         /**
