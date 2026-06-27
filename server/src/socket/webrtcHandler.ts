@@ -65,24 +65,9 @@ function grantScreenShare(
     
     if (sharers.has(userId)) {
         console.log(`🖥️  [SCREEN SHARE] El usuario [${userId}] ya está transmitiendo pantalla en la sala [${roomId}].`);
-        io.to(userId).emit('screen-share-granted', { roomId });
         return;
     }
     
-    io.to(userId).emit('screen-share-granted', { roomId });
-}
-
-function announceScreenShareStarted(
-    io: Server,
-    roomId: string,
-    userId: string
-) {
-    const sharers = getActiveSharers(roomId);
-
-    if (sharers.has(userId)) {
-        return;
-    }
-
     sharers.add(userId);
     
     // 🔥 LOG DETALLADO PARA EL SERVIDOR:
@@ -93,6 +78,9 @@ function announceScreenShareStarted(
     console.log(`   └─ Compartiendo actualmente en esta sala: [${Array.from(sharers).join(', ')}]`);
     console.log('=============================================================\n');
 
+    // Confirma al usuario que puede iniciar getDisplayMedia()
+    io.to(userId).emit('screen-share-granted', { roomId });
+    
     // Avisa a los demás participantes
     io.to(`call:${roomId}`)
         .except(userId)
@@ -168,19 +156,6 @@ export function registerWebRTCHandlers(io: Server) {
                 }
                 console.log(`👥 [WebRTC Backend] Enviando lista de participantes existentes a [${userId}]. Encontrados:`, existingUsers);
                 socket.emit('existing-call-participants', { userIds: existingUsers });
-
-                // Enviar lista de usuarios que actualmente comparten pantalla
-                const sharers = getActiveSharers(roomId);
-                if (sharers.size > 0) {
-                    const sharerIds = Array.from(sharers);
-                    console.log(`🖥️ [WebRTC Backend] Enviando lista de pantallas activas a [${userId}]:`, sharerIds);
-                    socket.emit('active-screen-shares', { userIds: sharerIds });
-                    sharerIds
-                        .filter((sharerId) => sharerId !== userId)
-                        .forEach((sharerId) => {
-                            io.to(sharerId).emit('screen-share-peer-joined', { roomId, userId });
-                        });
-                }
             } else {
                 console.log(`ℹ️ [WebRTC Backend] El usuario [${userId}] es el primero en unirse a la llamada.`);
             }
@@ -190,11 +165,6 @@ export function registerWebRTCHandlers(io: Server) {
                     io.sockets.adapter.rooms.get(`call:${roomId}`) || []
                 )
             );
-        });
-
-        socket.on('confirm-screen-share-started', ({ roomId }: { roomId: string }) => {
-            const userId = socket.data.userId;
-            announceScreenShareStarted(io, roomId, userId);
         });
 
         /**

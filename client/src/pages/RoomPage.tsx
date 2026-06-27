@@ -20,12 +20,6 @@ interface Message {
 // ─── Gap entre tiles del grid dinámico ───────────────────────────────────────
 const GAP = 8;
 
-const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
-  echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
-};
-
 // ─── Subcomponente para las diferentes distribuciones de video ─────────────
 
 interface VideoGridProps {
@@ -69,40 +63,24 @@ function ScreenVideo({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (el.srcObject !== stream) {
-      el.srcObject = stream;
-    }
+    el.srcObject = stream;
     el.play().catch((err) => {
-      console.warn("⚠️ [ScreenVideo] Fallo al reproducir, reintentando...", err);
-      // Reintentar después de un breve delay
-      setTimeout(() => {
-        el.play().catch(() => { });
-      }, 500);
+      console.warn(
+        "⚠️ [ScreenVideo] Fallo al reproducir, reintentando...",
+        err,
+      );
     });
   }, [stream]);
 
-  // También escuchar cuando el track se activa
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const handleCanPlay = () => {
-      el.play().catch(() => { });
-    };
-    el.addEventListener('canplay', handleCanPlay);
-    return () => el.removeEventListener('canplay', handleCanPlay);
-  }, [stream]);
-
   return (
-    <>
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <video
-        ref={ref}
-        autoPlay
-        playsInline
-        muted={muted}
-        className={className ?? "w-full h-full object-contain"}
-      />
-    </>
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted={muted}
+      className={className ?? "w-full h-full object-contain"}
+    />
   );
 }
 
@@ -348,13 +326,13 @@ function VideoGrid({
           </div>
         </div>
 
-        /* CARGANDO */
+      /* CARGANDO */
       ) : !localStream && remotePeers.length === 0 ? (
         <p className="text-gray-500 animate-pulse">
           Iniciando medios y buscando peers...
         </p>
 
-        /* 1-ON-1 con PiP */
+      /* 1-ON-1 con PiP */
       ) : pipPeer ? (
         <>
           <div className="w-full h-full max-w-5xl aspect-video">
@@ -365,7 +343,7 @@ function VideoGrid({
           </div>
         </>
 
-        /* GRID DINÁMICO (solo yo, ≥2 personas, o con pantallas) */
+      /* GRID DINÁMICO (solo yo, ≥2 personas, o con pantallas) */
       ) : containerSize.width > 0 ? (
         <div className="w-full h-full flex items-center justify-center">
           <div
@@ -444,7 +422,7 @@ function RoomPage() {
   const [modalPermissionType, setModalPermissionType] = useState<
     "camera" | "mic" | "both"
   >("camera");
-
+  
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const pendingScreenStreamRef = useRef<MediaStream | null>(null);
@@ -482,7 +460,7 @@ function RoomPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
-        audio: AUDIO_CONSTRAINTS,
+        audio: true,
       });
 
       setLocalStream(stream);
@@ -506,7 +484,7 @@ function RoomPage() {
       try {
         const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
           video: false,
-          audio: AUDIO_CONSTRAINTS,
+          audio: true,
         });
 
         setLocalStream(audioOnlyStream);
@@ -563,15 +541,6 @@ function RoomPage() {
   );
 
   const hasScreenShare = !!screenStream || remoteScreenStreams.size > 0;
-
-  // Activar modo presentación automáticamente cuando alguien comparte pantalla
-  useEffect(() => {
-    if (hasScreenShare) {
-      setPresentationMode(true);
-    } else {
-      setPresentationMode(false);
-    }
-  }, [hasScreenShare]);
 
   // ── Sincronización de pista de audio ───────────────────────────────────
   useEffect(() => {
@@ -656,8 +625,8 @@ function RoomPage() {
       try {
         const stream = pendingScreenStreamRef.current;
         if (!stream) {
-          console.warn("⚠️ [Screen Share] Se otorgó permiso pero no hay stream pendiente.");
-          return;
+            console.warn("⚠️ [Screen Share] Se otorgó permiso pero no hay stream pendiente.");
+            return;
         }
 
         console.log("📺 Stream de pantalla obtenido con éxito:", stream.id);
@@ -666,7 +635,6 @@ function RoomPage() {
         setRoomScreenSharing(true);
 
         await startScreenShare(stream);
-        socket.emit("confirm-screen-share-started", { roomId: id });
 
         // Escuchamos el botón nativo de "Dejar de compartir" de la barra de Chrome
         stream.getVideoTracks()[0].onended = () => {
@@ -689,12 +657,12 @@ function RoomPage() {
     };
 
     const handleDenied = (data: { reason: string }) => {
-      console.warn(`🚫 [Screen Share] Permiso denegado: ${data.reason}`);
-      if (pendingScreenStreamRef.current) {
-        pendingScreenStreamRef.current.getTracks().forEach((t) => t.stop());
-        pendingScreenStreamRef.current = null;
-      }
-      alert(`No se pudo compartir pantalla: ${data.reason}`);
+        console.warn(`🚫 [Screen Share] Permiso denegado: ${data.reason}`);
+        if (pendingScreenStreamRef.current) {
+            pendingScreenStreamRef.current.getTracks().forEach((t) => t.stop());
+            pendingScreenStreamRef.current = null;
+        }
+        alert(`No se pudo compartir pantalla: ${data.reason}`);
     };
 
     socket.on("screen-share-granted", handleGranted);
@@ -746,7 +714,7 @@ function RoomPage() {
       setShowPermissionModal(true);
       return;
     }
-
+    
     if (room.camOn) {
       room.setCamOn(false);
     } else {
@@ -801,9 +769,9 @@ function RoomPage() {
         };
 
         // Solicitar permiso al servidor (turnos)
-        socket.emit("request-screen-share", {
-          roomId: id,
-          userName: userLogged?.displayName
+        socket.emit("request-screen-share", { 
+            roomId: id, 
+            userName: userLogged?.displayName 
         });
 
       } catch (err) {
@@ -860,10 +828,11 @@ function RoomPage() {
           {hasScreenShare && (
             <button
               onClick={() => setPresentationMode((v) => !v)}
-              className={`p-1.5 rounded-lg transition-all ${presentationMode
-                ? "bg-cyan-500 text-gray-950"
-                : "bg-gray-800/80 hover:bg-gray-700 text-white"
-                }`}
+              className={`p-1.5 rounded-lg transition-all ${
+                presentationMode
+                  ? "bg-cyan-500 text-gray-950"
+                  : "bg-gray-800/80 hover:bg-gray-700 text-white"
+              }`}
               title={presentationMode ? "Volver a cuadrícula" : "Modo presentación"}
             >
               <Layout className="w-4 h-4" />
@@ -977,7 +946,7 @@ interface PermissionModalProps {
   onClose: () => void;
   onRetry: () => void;
 }
-
+// eslint-disable-next-line no-unused-vars
 function PermissionModal({
   isOpen,
   type,
