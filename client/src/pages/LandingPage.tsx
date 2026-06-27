@@ -29,33 +29,33 @@ function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#f0f4f8]">
-      <nav className="bg-white shadow px-8 py-4 flex justify-between items-center">
+      <nav className="bg-white shadow px-4 sm:px-8 py-3 sm:py-4 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <div className="bg-blue-600 text-white rounded p-1.5">
             <Video className="h-5 w-5" aria-hidden="true" />
           </div>
-          <span className="text-xl font-bold text-gray-800">StudyRoom</span>
+          <span className="text-base sm:text-xl font-bold text-gray-800">StudyRoom</span>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => navigate('/login')}
-            className="px-5 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="px-3 sm:px-5 py-1.5 sm:py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 text-xs sm:text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             Iniciar Sesión
           </button>
           <button
             type="button"
             onClick={() => navigate('/register')}
-            className="px-5 py-2 bg-blue-700 text-white rounded hover:bg-blue-800 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="px-3 sm:px-5 py-1.5 sm:py-2 bg-blue-700 text-white rounded hover:bg-blue-800 text-xs sm:text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             Registrarse
           </button>
         </div>
       </nav>
 
-      <section className="flex flex-col items-center justify-center text-center py-24 px-6">
-        <h1 className="text-5xl font-bold text-gray-900 mb-4">
+      <section className="flex flex-col items-center justify-center text-center py-12 sm:py-24 px-4 sm:px-6">
+        <h1 className="text-2xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
           Plataforma de Videoconferencia Educativa
         </h1>
         <p className="text-lg text-gray-500 max-w-xl mb-8">

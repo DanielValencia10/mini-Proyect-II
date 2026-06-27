@@ -38,6 +38,7 @@ export function useWebRTC(
   );
   const audioSenders = useRef<Map<string, RTCRtpSender>>(new Map());
   const videoSenders = useRef<Map<string, RTCRtpSender>>(new Map());
+  const screenTransceivers = useRef<Map<string, RTCRtpTransceiver>>(new Map());
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([]);
 
   // ── Screen share: estado y referencias ────────────────────────────
@@ -96,6 +97,7 @@ export function useWebRTC(
       peerConnections.current.clear();
       pendingCandidates.current.clear();
       cameraStreamId.current.clear();
+      screenTransceivers.current.clear();
       setRemoteStreams([]);
       setRemoteScreenStreams(new Map());
       socket.emit("join-call", { roomId: roomIdRef.current });
@@ -124,6 +126,7 @@ export function useWebRTC(
         cameraStreamId.current.delete(remoteUserId);
         audioSenders.current.delete(remoteUserId);
         videoSenders.current.delete(remoteUserId);
+        screenTransceivers.current.delete(remoteUserId);
         setRemoteStreams((prev) =>
           prev.filter((s) => s.userId !== remoteUserId),
         );
@@ -162,66 +165,61 @@ export function useWebRTC(
       if (audioSender) audioSenders.current.set(remoteUserId, audioSender);
       if (videoSender) videoSenders.current.set(remoteUserId, videoSender);
 
+      // Pre-crear transceiver de pantalla (siempre, inactive por defecto).
+      // Esto garantiza que todos los PCs tienen SIEMPRE 3 m-lines en el mismo
+      // orden [audio, video-cámara, video-pantalla], eliminando el error de
+      // "m-lines order mismatch" que ocurría al agregar un transceiver nuevo
+      // después de la negociación inicial.
+      const screenTcvr = pc.addTransceiver("video", { direction: "inactive" });
+      screenTransceivers.current.set(remoteUserId, screenTcvr);
+
       if (localScreenStreamRef.current) {
         const screenTrack = localScreenStreamRef.current.getVideoTracks()[0];
         if (screenTrack) {
-          pc.addTrack(screenTrack, localScreenStreamRef.current);
+          screenTcvr.sender.replaceTrack(screenTrack);
+          screenTcvr.direction = "sendonly";
         }
       }
 
       pc.ontrack = (event) => {
-        console.log("🚨 [DEBUG ONTRACK] ¡Llegó un track físico al navegador!", {
-          kind: event.track.kind,
-          streamId: event.streams[0]?.id,
-          trackLabel: event.track.label,
-        });
+        // Detectar si el track es de pantalla usando el índice del transceiver.
+        // El índice 2 es siempre el transceiver de pantalla (pre-creado).
+        const allTransceivers = pc.getTransceivers();
+        const tcvrIndex = allTransceivers.indexOf(event.transceiver);
+        const isScreen = tcvrIndex === 2;
 
-        const stream = event?.streams?.[0];
+        if (isScreen) {
+          if (event.track.kind !== "video") return;
+          console.log(`🖥️ [WebRTC] Pantalla compartida recibida de ${remoteUserId}`);
+          const screenStream = event.streams[0] ?? new MediaStream([event.track]);
+          setRemoteScreenStreams((prev) => {
+            const next = new Map(prev);
+            next.set(remoteUserId, screenStream);
+            return next;
+          });
+          event.track.onended = () => {
+            setRemoteScreenStreams((prev) => {
+              const next = new Map(prev);
+              next.delete(remoteUserId);
+              return next;
+            });
+          };
+          return;
+        }
+
+        // Índices 0 y 1 → audio y video de cámara
+        console.log(`🎵 [WebRTC] Track recibido: ${event.track.kind} de ${remoteUserId}`);
+        const stream = event.streams[0];
         if (!stream) return;
 
-        console.log(
-          `🎵 [WebRTC] Track recibido: ${event.track.kind} de ${remoteUserId}`,
-        );
-
-        // 🔥 SOLUCIÓN AL CLOSURE: Usamos un set-state funcional para leer el valor REAL
-        // y más actualizado de los streams en el momento exacto en que llega el track.
         setRemoteStreams((currentRemoteStreams) => {
           const knownCameraStreamId = cameraStreamId.current.get(remoteUserId);
-
-          // Si ya conocemos el stream principal de la cámara y este track llega
-          // en un stream diferente, se trata de una pantalla compartida.
-          if (knownCameraStreamId && stream.id !== knownCameraStreamId) {
-            if (event.track.kind === "video") {
-              console.log(
-                `🖥️ [WebRTC] ¡Detectada pantalla compartida de ${remoteUserId}!`,
-              );
-              setRemoteScreenStreams((prev) => {
-                const next = new Map(prev);
-                next.set(remoteUserId, stream);
-                return next;
-              });
-
-              stream.addEventListener("removetrack", () => {
-                if (stream.getVideoTracks().length === 0) {
-                  setRemoteScreenStreams((prev) => {
-                    const next = new Map(prev);
-                    next.delete(remoteUserId);
-                    return next;
-                  });
-                }
-              });
-            }
-            return currentRemoteStreams;
-          }
-
-          // Es el primer stream o es el mismo stream de la cámara principal
           if (!knownCameraStreamId) {
             cameraStreamId.current.set(remoteUserId, stream.id);
             if (currentRemoteStreams.some((s) => s.userId === remoteUserId))
               return currentRemoteStreams;
             return [...currentRemoteStreams, { userId: remoteUserId, stream }];
           }
-
           return currentRemoteStreams;
         });
       };
@@ -504,6 +502,7 @@ export function useWebRTC(
       cameraStreamId.current.delete(data.userId);
       audioSenders.current.delete(data.userId);
       videoSenders.current.delete(data.userId);
+      screenTransceivers.current.delete(data.userId);
       setRemoteStreams((prev) => prev.filter((s) => s.userId !== data.userId));
       setRemoteScreenStreams((prev) => {
         const next = new Map(prev);
@@ -537,6 +536,7 @@ export function useWebRTC(
       });
 
       pcs.clear();
+      screenTransceivers.current.clear();
     };
   }, [
     socket,
@@ -567,6 +567,7 @@ export function useWebRTC(
       pcs.clear();
       audioSenders.current.clear();
       videoSenders.current.clear();
+      screenTransceivers.current.clear();
     };
   }, []);
 
@@ -593,6 +594,7 @@ export function useWebRTC(
     cameraStreamId.current.clear();
     audioSenders.current.clear();
     videoSenders.current.clear();
+    screenTransceivers.current.clear();
     localScreenStreamRef.current = null;
     setRemoteStreams([]);
     setRemoteScreenStreams(new Map());
@@ -611,24 +613,17 @@ export function useWebRTC(
     const track = stream.getVideoTracks()[0];
     if (!track) return;
 
-    // Añadir el transceiver de uno en uno y esperar a que onnegotiationneeded
-    // se dispare antes de pasar al siguiente peer. Esto evita que múltiples
-    // renegociaciones simultáneas colisionen con otros peers que también
-    // están renegociando (p.ej. cuando dos usuarios comparten pantalla a la vez).
-    for (const [, pc] of peerConnections.current.entries()) {
-      if (pc.signalingState === "closed") continue;
-      await new Promise<void>((resolve) => {
-        const onNeg = () => {
-          pc.removeEventListener("negotiationneeded", onNeg);
-          resolve();
-        };
-        pc.addEventListener("negotiationneeded", onNeg);
-        // Fallback: si el evento ya se procesó o no llega, continuar tras 120ms.
-        setTimeout(resolve, 120);
-        // Se debe usar addTransceiver explícito para evitar que WebRTC reutilice
-        // el transceiver vacío de video de la cámara (si estaba apagada).
-        pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
-      });
+    // Usar el transceiver pre-creado (índice 2) en lugar de addTransceiver.
+    // Esto evita agregar nuevos m-lines y el error de reordenamiento de m-lines.
+    for (const [userId] of peerConnections.current.entries()) {
+      const pc = peerConnections.current.get(userId);
+      if (!pc || pc.signalingState === "closed") continue;
+      const screenTcvr = screenTransceivers.current.get(userId);
+      if (!screenTcvr) continue;
+      await screenTcvr.sender.replaceTrack(track);
+      if (screenTcvr.direction !== "sendonly") {
+        screenTcvr.direction = "sendonly"; // dispara onnegotiationneeded
+      }
     }
   }, []);
 
@@ -640,15 +635,16 @@ export function useWebRTC(
    * getDisplayMedia, típicamente el hook de arbitraje de screen share).
    */
   const unpublishScreenTrack = useCallback(async () => {
-    const stream = localScreenStreamRef.current;
-    if (!stream) return;
-    const track = stream.getVideoTracks()[0];
+    if (!localScreenStreamRef.current) return;
 
-    const peers = Array.from(peerConnections.current.entries());
-    for (const [, pc] of peers) {
-      const sender = pc.getSenders().find((s) => s.track === track);
-      if (sender) {
-        pc.removeTrack(sender);
+    for (const [userId] of peerConnections.current.entries()) {
+      const pc = peerConnections.current.get(userId);
+      if (!pc || pc.signalingState === "closed") continue;
+      const screenTcvr = screenTransceivers.current.get(userId);
+      if (!screenTcvr) continue;
+      await screenTcvr.sender.replaceTrack(null);
+      if (screenTcvr.direction !== "inactive") {
+        screenTcvr.direction = "inactive"; // dispara onnegotiationneeded
       }
     }
     localScreenStreamRef.current = null;
