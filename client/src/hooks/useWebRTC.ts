@@ -182,32 +182,45 @@ export function useWebRTC(
       }
 
       pc.ontrack = (event) => {
-        const allTransceivers = pc.getTransceivers();
-        const tcvrIndex = allTransceivers.indexOf(event.transceiver);
-
-        // El track de pantalla es siempre el último en llegar (índice >= 2)
-        // y tiene direction recvonly en el receptor
-        const isScreen = tcvrIndex >= 2 &&
-          event.track.kind === 'video' &&
-          event.transceiver.direction === 'recvonly';
+        const screenTcvr = screenTransceivers.current.get(remoteUserId);
+        const isScreen = event.transceiver === screenTcvr; // referencia exacta, no por índice
 
         if (isScreen) {
-          console.log(`🖥️ [WebRTC] Pantalla compartida recibida de ${remoteUserId}`);
-          const screenStream = event.streams[0] ?? new MediaStream([event.track]);
-          setRemoteScreenStreams((prev) => {
-            const next = new Map(prev);
-            next.set(remoteUserId, screenStream);
-            return next;
-          });
-          event.track.onended = () => {
+          const track = event.track;
+          const screenStream = event.streams[0] ?? new MediaStream([track]);
+
+          const addScreenStream = () => {
+            console.log(`🖥️ [WebRTC] Pantalla compartida ACTIVA de ${remoteUserId}`);
             setRemoteScreenStreams((prev) => {
+              const next = new Map(prev);
+              next.set(remoteUserId, screenStream);
+              return next;
+            });
+          };
+
+          const removeScreenStream = () => {
+            console.log(`🖥️ [WebRTC] Pantalla compartida DETENIDA de ${remoteUserId}`);
+            setRemoteScreenStreams((prev) => {
+              if (!prev.has(remoteUserId)) return prev;
               const next = new Map(prev);
               next.delete(remoteUserId);
               return next;
             });
           };
+
+          // El track existe desde que se negocia el m-line, pero arranca MUTED
+          // hasta que el remoto realmente envía frames (es decir, hasta que
+          // realmente empieza a compartir). Si ya llega "unmuted" (caso raro),
+          // lo agregamos de una vez.
+          if (!track.muted) addScreenStream();
+
+          track.onunmute = addScreenStream;   // empieza a compartir de verdad
+          track.onmute = removeScreenStream;  // deja de compartir (replaceTrack(null))
+          track.onended = removeScreenStream; // PC cerrada / track.stop() real
+
           return;
         }
+
         // Índices 0 y 1 → audio y video de cámara
         console.log(`🎵 [WebRTC] Track recibido: ${event.track.kind} de ${remoteUserId}`);
         const stream = event.streams[0];
@@ -224,7 +237,6 @@ export function useWebRTC(
           return currentRemoteStreams;
         });
       };
-
       pc.onicecandidate = (event) => {
         if (event.candidate && socket) {
           console.log(
