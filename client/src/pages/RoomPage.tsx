@@ -33,6 +33,7 @@ interface VideoGridProps {
   screenStream?: MediaStream | null;
   currentUserId: string;
   localAvatar?: string;
+  presentationMode: boolean;
 }
 
 type ActiveScreen = {
@@ -123,10 +124,10 @@ function VideoGrid({
   screenStream,
   currentUserId,
   localAvatar,
+  presentationMode,
 }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-  const [presentationMode, setPresentationMode] = useState(false);
 
   // Medir el contenedor para calcular layout óptimo
   useEffect(() => {
@@ -264,104 +265,86 @@ function VideoGrid({
     { gap: GAP },
   );
 
-  // ── MODO PRESENTACIÓN: pantalla grande + sidebar de cámaras ──────────────
-  if (presentationMode && mainScreen) {
-    return (
-      <div className="relative flex flex-col lg:flex-row gap-4 w-full h-full items-stretch">
-        <button
-          onClick={() => setPresentationMode(false)}
-          className="absolute top-2 right-2 z-10 bg-gray-800/80 backdrop-blur-sm hover:bg-gray-700 text-white p-1.5 rounded-lg transition-all"
-          title="Volver a cuadrícula"
-        >
-          <Layout className="w-4 h-4" />
-        </button>
-        <div className="flex-1 min-w-0 flex flex-col gap-3">
-          <div className="flex-1 min-h-[180px] sm:min-h-[300px] bg-black rounded-lg sm:rounded-xl overflow-hidden flex items-center justify-center relative">
-            <ScreenVideo stream={mainScreen.stream} />
-            <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-md text-sm">
-              Pantalla de {getOwnerName(mainScreen.ownerId, mainScreen.isLocal)}
+  // ── Variable para el branch 1-on-1 (necesaria antes del return único) ──────
+  const pipPeer =
+    activeScreens.length === 0 && remotePeers.length === 1
+      ? remotePeers[0]
+      : null;
+
+  // ── Un solo return: containerRef siempre montado → ResizeObserver siempre activo
+  return (
+    <div ref={containerRef} className="w-full h-full relative flex items-center justify-center">
+
+      {/* MODO PRESENTACIÓN */}
+      {presentationMode && mainScreen ? (
+        <div className="flex flex-col lg:flex-row gap-4 w-full h-full items-stretch">
+          <div className="flex-1 min-w-0 flex flex-col gap-3">
+            <div className="flex-1 min-h-[180px] sm:min-h-[300px] bg-black rounded-lg sm:rounded-xl overflow-hidden flex items-center justify-center relative">
+              <ScreenVideo stream={mainScreen.stream} />
+              <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-md text-sm">
+                Pantalla de {getOwnerName(mainScreen.ownerId, mainScreen.isLocal)}
+              </div>
+              {activeScreens.length > 1 && (
+                <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-md text-xs">
+                  {activeScreens.length} pantallas compartidas
+                </div>
+              )}
             </div>
-            {activeScreens.length > 1 && (
-              <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-md text-xs">
-                {activeScreens.length} pantallas compartidas
+            {otherScreens.length > 0 && (
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {otherScreens.map((screen) => (
+                  <button
+                    key={screen.ownerId}
+                    onClick={() => setSelectedOwnerId(screen.ownerId)}
+                    className="relative w-40 aspect-video flex-shrink-0 rounded-lg overflow-hidden border-2 border-gray-700 hover:border-cyan-500 transition-colors"
+                    title={`Ver pantalla de ${getOwnerName(screen.ownerId, screen.isLocal)} en grande`}
+                  >
+                    <ScreenVideo
+                      stream={screen.stream}
+                      className="w-full h-full object-cover"
+                    />
+                    <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[11px] px-1.5 py-0.5 rounded">
+                      {getOwnerName(screen.ownerId, screen.isLocal)}
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
-          {otherScreens.length > 0 && (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {otherScreens.map((screen) => (
-                <button
-                  key={screen.ownerId}
-                  onClick={() => setSelectedOwnerId(screen.ownerId)}
-                  className="relative w-40 aspect-video flex-shrink-0 rounded-lg overflow-hidden border-2 border-gray-700 hover:border-cyan-500 transition-colors"
-                  title={`Ver pantalla de ${getOwnerName(screen.ownerId, screen.isLocal)} en grande`}
-                >
-                  <ScreenVideo
-                    stream={screen.stream}
-                    className="w-full h-full object-cover"
-                  />
-                  <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[11px] px-1.5 py-0.5 rounded">
-                    {getOwnerName(screen.ownerId, screen.isLocal)}
-                  </span>
-                </button>
-              ))}
+          <div className="w-full lg:w-72 flex lg:flex-col gap-2 sm:gap-3 overflow-x-auto lg:overflow-y-auto p-1 flex-shrink-0">
+            <div className="w-32 sm:w-40 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md">
+              {renderLocalCard("w-full h-full object-cover")}
             </div>
-          )}
-        </div>
-        <div className="w-full lg:w-72 flex lg:flex-col gap-2 sm:gap-3 overflow-x-auto lg:overflow-y-auto p-1 flex-shrink-0">
-          <div className="w-32 sm:w-40 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md">
-            {renderLocalCard("w-full h-full object-cover")}
+            {remotePeers.map((peer) => (
+              <div
+                key={peer.id}
+                className="w-32 sm:w-40 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md"
+              >
+                {renderRemoteCard(peer)}
+              </div>
+            ))}
           </div>
-          {remotePeers.map((peer) => (
-            <div
-              key={peer.id}
-              className="w-32 sm:w-40 lg:w-full aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-md"
-            >
-              {renderRemoteCard(peer)}
-            </div>
-          ))}
         </div>
-      </div>
-    );
-  }
 
-  // ── CARGANDO ──────────────────────────────────────────────────────────────
-  if (!localStream && remotePeers.length === 0) {
-    return (
-      <p className="text-gray-500 animate-pulse">
-        Iniciando medios y buscando peers...
-      </p>
-    );
-  }
+      /* CARGANDO */
+      ) : !localStream && remotePeers.length === 0 ? (
+        <p className="text-gray-500 animate-pulse">
+          Iniciando medios y buscando peers...
+        </p>
 
-  // ── 1-ON-1 con PiP (sin pantallas compartidas) ────────────────────────────
-  if (activeScreens.length === 0 && remotePeers.length === 1) {
-    const peer = remotePeers[0];
-    return (
-      <div className="w-full h-full relative flex items-center justify-center">
-        <div className="w-full h-full max-w-5xl aspect-video">
-          {renderRemoteCard(peer)}
-        </div>
-        <div className="absolute bottom-20 sm:bottom-4 right-2 sm:right-4 w-24 h-16 sm:w-48 sm:h-32 shadow-2xl rounded-xl sm:rounded-2xl overflow-hidden border border-gray-700/60 z-10 transition-all hover:scale-105">
-          {renderLocalCard("w-full h-full")}
-        </div>
-      </div>
-    );
-  }
+      /* 1-ON-1 con PiP */
+      ) : pipPeer ? (
+        <>
+          <div className="w-full h-full max-w-5xl aspect-video">
+            {renderRemoteCard(pipPeer)}
+          </div>
+          <div className="absolute bottom-20 sm:bottom-4 right-2 sm:right-4 w-24 h-16 sm:w-48 sm:h-32 shadow-2xl rounded-xl sm:rounded-2xl overflow-hidden border border-gray-700/60 z-10 transition-all hover:scale-105">
+            {renderLocalCard("w-full h-full")}
+          </div>
+        </>
 
-  // ── GRID DINÁMICO (caso general: solo yo, o ≥ 2 personas, o con pantallas) ─
-  return (
-    <div ref={containerRef} className="w-full h-full relative">
-      {activeScreens.length > 0 && (
-        <button
-          onClick={() => setPresentationMode(true)}
-          className="absolute top-2 right-2 z-10 bg-gray-800/80 backdrop-blur-sm hover:bg-gray-700 text-white p-1.5 rounded-lg transition-all"
-          title="Modo presentación"
-        >
-          <Layout className="w-4 h-4" />
-        </button>
-      )}
-      {containerSize.width > 0 && (
+      /* GRID DINÁMICO (solo yo, ≥2 personas, o con pantallas) */
+      ) : containerSize.width > 0 ? (
         <div className="w-full h-full flex items-center justify-center">
           <div
             style={{
@@ -400,7 +383,7 @@ function VideoGrid({
             })}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -421,6 +404,7 @@ function RoomPage() {
 
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [copied, setCopied] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(false);
 
   // Detectar soporte real de compartir pantalla (no disponible en Android ni en algunos móviles)
   const canShareScreen =
@@ -555,6 +539,8 @@ function RoomPage() {
     () => remotePeers.length + (localStream ? 1 : 0),
     [remotePeers, localStream],
   );
+
+  const hasScreenShare = !!screenStream || remoteScreenStreams.size > 0;
 
   // ── Sincronización de pista de audio ───────────────────────────────────
   useEffect(() => {
@@ -838,9 +824,24 @@ function RoomPage() {
             )}
           </button>
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          <Users className="h-4 w-4" />
-          <span>{totalPersonas} participantes</span>
+        <div className="flex items-center gap-3">
+          {hasScreenShare && (
+            <button
+              onClick={() => setPresentationMode((v) => !v)}
+              className={`p-1.5 rounded-lg transition-all ${
+                presentationMode
+                  ? "bg-cyan-500 text-gray-950"
+                  : "bg-gray-800/80 hover:bg-gray-700 text-white"
+              }`}
+              title={presentationMode ? "Volver a cuadrícula" : "Modo presentación"}
+            >
+              <Layout className="w-4 h-4" />
+            </button>
+          )}
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <Users className="h-4 w-4" />
+            <span>{totalPersonas} participantes</span>
+          </div>
         </div>
       </header>
 
@@ -892,6 +893,7 @@ function RoomPage() {
               screenStream={screenStream}
               currentUserId={currentUserId}
               localAvatar={userLogged?.photoURL ?? undefined}
+              presentationMode={presentationMode}
             />
           </div>
         </main>
