@@ -299,9 +299,9 @@ function VideoGrid({
     >
       {items.map((item) => (
         <div key={item.id} className="w-full h-full aspect-video rounded-xl overflow-hidden shadow-md relative group">
-           <div className="absolute inset-0 z-10 cursor-pointer hidden group-hover:block bg-black/10" onClick={() => setPinnedId(item.id)}>
+           <button type="button" className="absolute inset-0 z-10 cursor-pointer hidden group-hover:block bg-black/10 w-full text-left focus:outline-none" onClick={() => setPinnedId(item.id)}>
               <div className="absolute top-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs">Fijar</div>
-           </div>
+           </button>
            {renderItemCard(item)}
         </div>
       ))}
@@ -585,7 +585,7 @@ function RoomPage() {
       socket.off("screen-share-granted", handleGranted);
       socket.off("screen-share-denied", handleDenied);
     };
-  }, [socket, id, startScreenShare, setRoomScreenSharing]);
+  }, [socket, id, startScreenShare, setRoomScreenSharing, stopScreenShare]);
 
   // ── Handlers memorizados ──────────────────────────────────────────────
   const handleSendMessage = useCallback(() => {
@@ -841,7 +841,6 @@ interface PermissionModalProps {
   onClose: () => void;
   onRetry: () => void;
 }
-// eslint-disable-next-line no-unused-vars
 function PermissionModal({
   isOpen,
   type,

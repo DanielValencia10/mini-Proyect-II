@@ -545,12 +545,15 @@ export function useWebRTC(
     handleIceCandidate,
     handleScreenShareStopped,
     callUser,
+    unpublishScreenTrack,
   ]);
 
   // ── Limpieza total al desmontar ───────────────────────────────────
   useEffect(() => {
     console.log("🚀 [useWebRTC] Hook montado.");
     const pcs = peerConnections.current;
+    const audios = audioSenders.current;
+    const videos = videoSenders.current;
 
     return () => {
       console.log("🔴 useWebRTC DESMONTADO");
@@ -564,8 +567,8 @@ export function useWebRTC(
       });
 
       pcs.clear();
-      audioSenders.current.clear();
-      videoSenders.current.clear();
+      audios.clear();
+      videos.clear();
     };
   }, []);
 
@@ -660,7 +663,7 @@ export function useWebRTC(
         throw error;
       }
     },
-    [publishScreenTrack, roomId, socket],
+    [publishScreenTrack],
   );
 
   const stopScreenShare = useCallback(async () => {
