@@ -35,6 +35,8 @@ export function useWebRTC(
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(
     new Map(),
   );
+  const audioSenders = useRef<Map<string, RTCRtpSender>>(new Map());
+  const videoSenders = useRef<Map<string, RTCRtpSender>>(new Map());
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([]);
 
   // ── Screen share: estado y referencias ────────────────────────────
@@ -60,25 +62,22 @@ export function useWebRTC(
 
   // ── Actualizar tracks en PCs existentes cuando localStream cambia ──
   useEffect(() => {
-    if (!localStream) return;
-    const newAudioTrack = localStream.getAudioTracks()[0] || null;
-    const newVideoTrack = localStream.getVideoTracks()[0] || null;
+    const videoTrack = localStream?.getVideoTracks()[0] || null;
+    const audioTrack = localStream?.getAudioTracks()[0] || null;
 
-    peerConnections.current.forEach((pc) => {
-      // Update Audio Track
-      const audioTransceivers = pc.getTransceivers().filter(t => t.receiver.track.kind === "audio");
-      const audioTransceiver = audioTransceivers[0];
-      if (audioTransceiver && audioTransceiver.sender.track !== newAudioTrack) {
-        audioTransceiver.sender.replaceTrack(newAudioTrack).catch(e => console.error("Error replacing audio track:", e));
+    videoSenders.current.forEach((sender) => {
+      if (sender.track !== videoTrack) {
+        sender.replaceTrack(videoTrack).catch((err) =>
+          console.error("Error replacing video track", err)
+        );
       }
+    });
 
-      // Update Video Track (Camera)
-      // La cámara siempre es el PRIMER transceiver de video creado.
-      const videoTransceivers = pc.getTransceivers().filter(t => t.receiver.track.kind === "video");
-      const cameraTransceiver = videoTransceivers[0];
-
-      if (cameraTransceiver && cameraTransceiver.sender.track !== newVideoTrack) {
-        cameraTransceiver.sender.replaceTrack(newVideoTrack).catch(e => console.error("Error replacing camera track:", e));
+    audioSenders.current.forEach((sender) => {
+      if (sender.track !== audioTrack) {
+        sender.replaceTrack(audioTrack).catch((err) =>
+          console.error("Error replacing audio track", err)
+        );
       }
     });
   }, [localStream]);
@@ -122,6 +121,8 @@ export function useWebRTC(
         peerConnections.current.delete(remoteUserId);
         pendingCandidates.current.delete(remoteUserId);
         cameraStreamId.current.delete(remoteUserId);
+        audioSenders.current.delete(remoteUserId);
+        videoSenders.current.delete(remoteUserId);
         setRemoteStreams((prev) =>
           prev.filter((s) => s.userId !== remoteUserId),
         );
@@ -142,17 +143,23 @@ export function useWebRTC(
       const currentLocalStream = localStreamRef.current;
       const streamToGroup = currentLocalStream || new MediaStream();
 
+      let audioSender: RTCRtpSender | undefined;
+      let videoSender: RTCRtpSender | undefined;
+
       if (currentLocalStream && currentLocalStream.getAudioTracks().length > 0) {
-        pc.addTrack(currentLocalStream.getAudioTracks()[0], streamToGroup);
+        audioSender = pc.addTrack(currentLocalStream.getAudioTracks()[0], streamToGroup);
       } else {
-        pc.addTransceiver("audio", { direction: "sendrecv", streams: [streamToGroup] });
+        audioSender = pc.addTransceiver("audio", { direction: "sendrecv", streams: [streamToGroup] }).sender;
       }
 
       if (currentLocalStream && currentLocalStream.getVideoTracks().length > 0) {
-        pc.addTrack(currentLocalStream.getVideoTracks()[0], streamToGroup);
+        videoSender = pc.addTrack(currentLocalStream.getVideoTracks()[0], streamToGroup);
       } else {
-        pc.addTransceiver("video", { direction: "sendrecv", streams: [streamToGroup] });
+        videoSender = pc.addTransceiver("video", { direction: "sendrecv", streams: [streamToGroup] }).sender;
       }
+
+      if (audioSender) audioSenders.current.set(remoteUserId, audioSender);
+      if (videoSender) videoSenders.current.set(remoteUserId, videoSender);
 
       if (localScreenStreamRef.current) {
         const screenTrack = localScreenStreamRef.current.getVideoTracks()[0];
@@ -493,6 +500,8 @@ export function useWebRTC(
       }
       pendingCandidates.current.delete(data.userId);
       cameraStreamId.current.delete(data.userId);
+      audioSenders.current.delete(data.userId);
+      videoSenders.current.delete(data.userId);
       setRemoteStreams((prev) => prev.filter((s) => s.userId !== data.userId));
       setRemoteScreenStreams((prev) => {
         const next = new Map(prev);
@@ -554,6 +563,8 @@ export function useWebRTC(
       });
 
       pcs.clear();
+      audioSenders.current.clear();
+      videoSenders.current.clear();
     };
   }, []);
 
@@ -578,6 +589,8 @@ export function useWebRTC(
 
     peerConnections.current.clear();
     cameraStreamId.current.clear();
+    audioSenders.current.clear();
+    videoSenders.current.clear();
     localScreenStreamRef.current = null;
     setRemoteStreams([]);
     setRemoteScreenStreams(new Map());
