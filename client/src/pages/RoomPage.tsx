@@ -626,32 +626,31 @@ function RoomPage() {
     }
     
     if (room.camOn) {
-      if (localStreamRef.current) {
-        const audioTracks = localStreamRef.current.getAudioTracks();
-        localStreamRef.current.getVideoTracks().forEach((track) => track.stop());
-        const newStream = new MediaStream(audioTracks);
-        setLocalStream(newStream);
-      }
       room.setCamOn(false);
     } else {
-      try {
-        const newVideoStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
-        if (localStreamRef.current) {
-          const audioTracks = localStreamRef.current.getAudioTracks();
-          const newStream = new MediaStream([
-            ...audioTracks,
-            ...newVideoStream.getVideoTracks(),
-          ]);
-          setLocalStream(newStream);
-        } else {
-          setLocalStream(newVideoStream);
-        }
+      const currentVideoTrack = localStreamRef.current?.getVideoTracks()[0];
+      if (currentVideoTrack) {
         room.setCamOn(true);
-      } catch (error) {
-        console.error("Error al encender la cámara:", error);
+      } else {
+        try {
+          const newVideoStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          if (localStreamRef.current) {
+            const audioTracks = localStreamRef.current.getAudioTracks();
+            const newStream = new MediaStream([
+              ...audioTracks,
+              ...newVideoStream.getVideoTracks(),
+            ]);
+            setLocalStream(newStream);
+          } else {
+            setLocalStream(newVideoStream);
+          }
+          room.setCamOn(true);
+        } catch (error) {
+          console.error("Error al encender la cámara:", error);
+        }
       }
     }
   }, [cameraPermission, micPermission, room]);
