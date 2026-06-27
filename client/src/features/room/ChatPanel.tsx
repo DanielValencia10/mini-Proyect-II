@@ -33,7 +33,7 @@ export function ChatPanel({
   const canSend = message.trim().length > 0 && remaining >= 0;
 
   return (
-    <aside className="w-72 sm:w-80 min-w-0 shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col">
+    <aside className="fixed sm:static bottom-0 sm:bottom-auto left-0 sm:left-auto right-0 sm:inset-y-0 h-[55vh] sm:h-auto w-full sm:w-80 min-w-0 sm:shrink-0 bg-gray-900 border-t sm:border-t-0 sm:border-l border-gray-800 flex flex-col z-40 shadow-2xl sm:shadow-none rounded-t-2xl sm:rounded-none">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
         <span className="font-semibold text-sm">Chat</span>
         <button onClick={onClose} className="text-gray-400 hover:text-white">
@@ -64,7 +64,7 @@ export function ChatPanel({
                   {isMine ? "Tú" : m.author}
                 </p>
                 <div
-                  className={`mt-0.5 max-w-[85%] min-w-0 rounded-xl px-3 py-2 text-sm break-all whitespace-pre-wrap overflow-hidden ${
+                  className={`mt-0.5 max-w-[90%] min-w-0 rounded-xl px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm break-all whitespace-pre-wrap overflow-hidden ${
                     isMine
                       ? "bg-cyan-500 text-gray-950"
                       : "bg-gray-800 text-gray-200"
@@ -89,12 +89,12 @@ export function ChatPanel({
             onKeyDown={(e) => e.key === "Enter" && canSend && onSend()}
             placeholder="Escribe un mensaje..."
             maxLength={MAX_CHARS}
-            className="flex-1 bg-gray-800 text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-cyan-500 placeholder-gray-500"
+            className="flex-1 bg-gray-800 text-white text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 outline-none focus:ring-1 focus:ring-cyan-500 placeholder-gray-500"
           />
           <button
             onClick={onSend}
             disabled={!canSend}
-            className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 px-3 rounded-lg font-bold text-sm transition-colors"
+            className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg font-bold text-xs sm:text-sm transition-colors"
           >
             ↑
           </button>

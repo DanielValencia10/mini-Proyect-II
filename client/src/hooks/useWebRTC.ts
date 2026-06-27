@@ -7,6 +7,7 @@ interface RemoteStream {
 }
 
 const ICE_SERVERS: RTCConfiguration = {
+  iceCandidatePoolSize: 2,
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
@@ -456,9 +457,9 @@ export function useWebRTC(
       console.log("👤 user-joined-call", data.userId, "yo:", currentUserId);
 
       if (data.userId !== currentUserId) {
-        // 🛑 CANDADO 1: Si ya existe una conexión viva, no la vuelvas a duplicar
+        // 🛑 CANDADO 1: Si ya existe una conexión viva (no cerrada ni fallida), no la duplicar.
         const existingPc = peerConnections.current.get(data.userId);
-        if (existingPc && existingPc.signalingState !== "closed") {
+        if (existingPc && existingPc.signalingState !== "closed" && existingPc.connectionState !== "failed") {
           console.log(
             `⚠️ [WebRTC] Ignorando 'user-joined-call' para ${data.userId} porque ya hay una conexión activa.`,
           );
@@ -478,9 +479,9 @@ export function useWebRTC(
 
       data.userIds.forEach((userId) => {
         if (userId !== currentUserId) {
-          // 🛑 CANDADO 2: Si ya existe una conexión viva en el mapa, no la dupliques
+          // 🛑 CANDADO 2: Si ya existe una conexión viva (no cerrada ni fallida), no la duplicar.
           const existingPc = peerConnections.current.get(userId);
-          if (existingPc && existingPc.signalingState !== "closed") {
+          if (existingPc && existingPc.signalingState !== "closed" && existingPc.connectionState !== "failed") {
             console.log(
               `⚠️ [WebRTC] Ignorando participante existente ${userId} porque ya está conectado.`,
             );
@@ -610,10 +611,24 @@ export function useWebRTC(
     const track = stream.getVideoTracks()[0];
     if (!track) return;
 
+    // Añadir el transceiver de uno en uno y esperar a que onnegotiationneeded
+    // se dispare antes de pasar al siguiente peer. Esto evita que múltiples
+    // renegociaciones simultáneas colisionen con otros peers que también
+    // están renegociando (p.ej. cuando dos usuarios comparten pantalla a la vez).
     for (const [, pc] of peerConnections.current.entries()) {
-      // Se debe usar addTransceiver explícito para evitar que WebRTC reutilice
-      // el transceiver vacío de video de la cámara (si estaba apagada).
-      pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+      if (pc.signalingState === "closed") continue;
+      await new Promise<void>((resolve) => {
+        const onNeg = () => {
+          pc.removeEventListener("negotiationneeded", onNeg);
+          resolve();
+        };
+        pc.addEventListener("negotiationneeded", onNeg);
+        // Fallback: si el evento ya se procesó o no llega, continuar tras 120ms.
+        setTimeout(resolve, 120);
+        // Se debe usar addTransceiver explícito para evitar que WebRTC reutilice
+        // el transceiver vacío de video de la cámara (si estaba apagada).
+        pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+      });
     }
   }, []);
 

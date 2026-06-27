@@ -9,6 +9,7 @@ const PORT = process.env.REALTIME_PORT ?? process.env.PORT ?? 3001;
 interface Participant {
   id: string;
   name: string;
+  avatar?: string;
   speaking: boolean;
   camOn: boolean;
   micOn: boolean;
@@ -62,7 +63,7 @@ io.on('connection', (socket) => {
   console.log(`🟢 [Socket Event] Cliente conectado. Socket ID: ${socket.id}, UID: ${socket.data.userId}`);
 
   // ─── Unirse a sala ────────────────────────────────────────────────
-  socket.on('join-room', ({ roomId, userName }: { roomId: string; userName: string }) => {
+  socket.on('join-room', ({ roomId, userName, avatar }: { roomId: string; userName: string; avatar?: string }) => {
     const userId = socket.data.userId;
     if (!userId) {
       console.warn(`⚠️ [Room] Intento de join-room sin userId válido en socket: ${socket.id}`);
@@ -90,6 +91,7 @@ io.on('connection', (socket) => {
     rooms.get(roomId)!.set(userId, {
       id: userId,
       name: userName,
+      avatar: avatar ?? "",
       speaking: false,
       camOn: false,
       micOn: false,
