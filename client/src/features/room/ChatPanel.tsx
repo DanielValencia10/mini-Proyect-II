@@ -33,7 +33,7 @@ export function ChatPanel({
   const canSend = message.trim().length > 0 && remaining >= 0;
 
   return (
-    <aside className="w-72 sm:w-80 min-w-0 shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col">
+    <aside className="absolute inset-0 sm:relative z-40 w-full sm:w-80 min-w-0 shrink-0 bg-gray-900 sm:border-l border-gray-800 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
         <span className="font-semibold text-sm">Chat</span>
         <button onClick={onClose} className="text-gray-400 hover:text-white">

@@ -91,12 +91,12 @@ function Dashboard() {
     return (
         <div className="min-h-screen bg-[#f0f4f8]">
             {/* Navbar */}
-            <nav className="bg-white shadow-sm px-8 py-4 flex justify-between items-center">
-                <div className="flex items-center gap-2">
+            <nav className="bg-white shadow-sm px-4 sm:px-8 py-4 flex justify-between items-center">
+                <div className="flex items-center gap-2 shrink-0">
                     <div className="bg-blue-700 text-white rounded p-1.5"><Video className="h-5 w-5" /></div>
-                    <span className="text-xl font-bold text-gray-800">StudyRoom</span>
+                    <span className="text-xl font-bold text-gray-800 hidden sm:block">StudyRoom</span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 sm:gap-3">
                     <button
                         onClick={() => navigate('/profile')}
                         className="bg-gray-100 rounded-full p-2 hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -116,7 +116,7 @@ function Dashboard() {
                                 <User className="h-5 w-5 text-gray-500" />
                             )}
                         </div>
-                        <div className="text-sm min-w-0">
+                        <div className="text-sm min-w-0 hidden sm:block text-left">
                             <p className="font-semibold text-gray-800 truncate">{userLogged?.displayName}</p>
                             <p className="text-gray-400 truncate">@{username}</p>
                         </div>
@@ -127,14 +127,14 @@ function Dashboard() {
                 </div>
             </nav>
 
-            <main className="max-w-6xl mx-auto px-8 py-10">
+            <main className="max-w-6xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-gray-900">Bienvenido, {firstName}</h1>
                     <p className="text-gray-500 mt-1">Gestiona tus salas de estudio o únete a nuevas sesiones</p>
                 </div>
 
                 {/* Botones acción */}
-                <div className="grid grid-cols-2 gap-4 mb-10">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-10">
                     <button
                         onClick={() => { setShowCreate(true); setShowJoin(false) }}
                         className="flex items-center justify-center gap-2 bg-blue-800 hover:bg-blue-900 text-white py-4 rounded-lg font-semibold text-lg transition-colors"
@@ -152,7 +152,7 @@ function Dashboard() {
                 {/* Modal crear sala */}
                 {showCreate && (
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex flex-col gap-2">
-                        <div className="flex gap-3 items-center">
+                        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
                             <input
                                 value={roomName}
                                 onChange={e => { setRoomName(e.target.value); setRoomNameError('') }}
@@ -164,7 +164,7 @@ function Dashboard() {
                             <button
                                 onClick={handleCreate}
                                 disabled={saving}
-                                className="bg-blue-800 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                                className="bg-blue-800 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2 w-full sm:w-auto"
                             >
                                 {saving && <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />}
                                 Crear
@@ -180,7 +180,7 @@ function Dashboard() {
                 {/* Modal unirse */}
                 {showJoin && (
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex flex-col gap-2">
-                        <div className="flex gap-3 items-center">
+                        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
                             <input
                                 value={joinId}
                                 onChange={e => { setJoinId(e.target.value); setJoinError('') }}
@@ -192,7 +192,7 @@ function Dashboard() {
                             <button
                                 onClick={handleJoin}
                                 disabled={joining}
-                                className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                                className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2 w-full sm:w-auto"
                             >
                                 {joining && <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />}
                                 Unirse

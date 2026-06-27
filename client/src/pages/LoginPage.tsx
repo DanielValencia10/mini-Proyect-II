@@ -57,9 +57,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#f0f4f8] flex flex-col">
       <AuthHeader showRegister />
 
-      <main className="flex-1 flex items-center justify-center px-6 py-12" role="main">
+      <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12" role="main">
         <div className="w-full max-w-md">
-          <div className="bg-neutral-white border border-neutral-200 rounded-xl p-8 shadow-lg">
+          <div className="bg-neutral-white border border-neutral-200 rounded-xl p-6 sm:p-8 shadow-lg">
 
             {!showReset ? (
               <>

@@ -412,6 +412,10 @@ export function registerWebRTCHandlers(io: Server) {
             for (const room of socket.rooms) {
                 if (room.startsWith('call:')) {
                     const roomId = room.replace('call:', '');
+                    
+                    // Notificar a la sala que el usuario abandonó para que limpien su cámara/audio
+                    socket.to(roomId).emit('user-left-call', { userId });
+                    
                     if (getActiveSharers(roomId).has(userId)) {
                         stopSharing(roomId, userId);
                         socket.to(room).emit('screen-share-stopped', { userId, forced: false });

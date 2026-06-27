@@ -126,9 +126,9 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-[#f0f4f8] flex flex-col">
       <AuthHeader showLogin />
 
-      <main className="flex-1 flex items-center justify-center px-6 py-12" role="main">
+      <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12" role="main">
         <div className="w-full max-w-2xl">
-          <div className="bg-neutral-white border border-neutral-200 rounded-xl p-8 shadow-lg">
+          <div className="bg-neutral-white border border-neutral-200 rounded-xl p-6 sm:p-8 shadow-lg">
 
             <div className="text-center mb-8">
               <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
