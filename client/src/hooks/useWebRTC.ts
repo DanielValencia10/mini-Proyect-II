@@ -441,6 +441,28 @@ export function useWebRTC(
     });
   }, []);
 
+  /**
+   * unpublishScreenTrack
+   * ---------------------
+   * Quita el track de pantalla de todas las PeerConnection activas y
+   * renegocia. No detiene el MediaStream en sí (eso lo hace quien llamó a
+   * getDisplayMedia, típicamente el hook de arbitraje de screen share).
+   */
+  const unpublishScreenTrack = useCallback(async () => {
+    const stream = localScreenStreamRef.current;
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+
+    const peers = Array.from(peerConnections.current.entries());
+    for (const [, pc] of peers) {
+      const sender = pc.getSenders().find((s) => s.track === track);
+      if (sender) {
+        pc.removeTrack(sender);
+      }
+    }
+    localScreenStreamRef.current = null;
+  }, []);
+
   // ── Suscripción a eventos del socket (ÚNICO useEffect de listeners) ─
   useEffect(() => {
     if (!socket) return;
@@ -618,28 +640,6 @@ export function useWebRTC(
       // el transceiver vacío de video de la cámara (si estaba apagada).
       pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
     }
-  }, []);
-
-  /**
-   * unpublishScreenTrack
-   * ---------------------
-   * Quita el track de pantalla de todas las PeerConnection activas y
-   * renegocia. No detiene el MediaStream en sí (eso lo hace quien llamó a
-   * getDisplayMedia, típicamente el hook de arbitraje de screen share).
-   */
-  const unpublishScreenTrack = useCallback(async () => {
-    const stream = localScreenStreamRef.current;
-    if (!stream) return;
-    const track = stream.getVideoTracks()[0];
-
-    const peers = Array.from(peerConnections.current.entries());
-    for (const [, pc] of peers) {
-      const sender = pc.getSenders().find((s) => s.track === track);
-      if (sender) {
-        pc.removeTrack(sender);
-      }
-    }
-    localScreenStreamRef.current = null;
   }, []);
 
   // En tu archivo useWebRTC.ts
