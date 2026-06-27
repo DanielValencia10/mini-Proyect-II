@@ -431,6 +431,7 @@ function RoomPage() {
     joinCall,
     leaveCall,
     startScreenShare,
+    stopScreenShare,
   } = useWebRTC(id ?? "", localStream, socket, currentUserId);
 
 
@@ -547,7 +548,7 @@ function RoomPage() {
           setScreenStream(null);
           screenStreamRef.current = null;
           setRoomScreenSharing(false);
-          socket.emit("stop-screen-share", { roomId: id });
+          stopScreenShare();
         };
       } catch (error) {
         console.error(
@@ -691,7 +692,7 @@ function RoomPage() {
       // Apagado manual desde el botón de la app
       console.log("🛑 Deteniendo pantalla compartida manualmente...");
       screenStreamRef.current?.getTracks().forEach((t) => t.stop());
-      socket.emit("stop-screen-share", { roomId: id });
+      stopScreenShare();
       setScreenStream(null);
       screenStreamRef.current = null;
       setRoomScreenSharing(false);
