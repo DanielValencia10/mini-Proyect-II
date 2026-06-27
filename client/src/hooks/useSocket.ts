@@ -5,6 +5,7 @@ import useAuthStore from '../stores/useAuthStore';
 interface Participant {
     id: string;
     name: string;
+    avatar?: string;
     speaking: boolean;
     camOn: boolean;
     micOn: boolean;
@@ -16,12 +17,14 @@ export function useSocket(roomId: string) {
     const { userLogged, token } = useAuthStore();
     const uid = userLogged?.uid;
     const displayName = userLogged?.displayName ?? 'Anónimo';
+    const avatar = userLogged?.photoURL ?? undefined;
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const socketRef = useRef(socket);
     const roomIdRef = useRef(roomId);
     const displayNameRef = useRef(displayName);
     const uidRef = useRef(uid);
+    const avatarRef = useRef(avatar);
 
     // Mantiene los refs actualizados en cada render
     useEffect(() => {
@@ -29,6 +32,7 @@ export function useSocket(roomId: string) {
         roomIdRef.current = roomId;
         displayNameRef.current = displayName;
         uidRef.current = uid;
+        avatarRef.current = avatar;
     });
 
     // ── 1. Creación/recreación del socket cuando cambia el token ──────────────────────
@@ -120,6 +124,7 @@ export function useSocket(roomId: string) {
             roomId,
             userId: uid,
             userName: displayName,
+            avatar,
         });
 
         const handleParticipants = (data: Participant[]) => {
@@ -136,7 +141,7 @@ export function useSocket(roomId: string) {
             }
             currentSocket.off('room-participants', handleParticipants);
         };
-    }, [roomId, uid, displayName, isConnected]);
+    }, [roomId, uid, displayName, avatar, isConnected]);
 
     // ── 3. Método manual de desconexión completa ─────────────────────────────────────
     const disconnectSocket = useCallback(() => {

@@ -3,6 +3,7 @@ import { Mic, MicOff, VideoOff } from "lucide-react";
 
 interface Props {
   name: string;
+  avatar?: string;
   speaking: boolean;
   stream?: MediaStream | null;
   isLocal?: boolean;
@@ -13,6 +14,7 @@ interface Props {
 
 export function ParticipantCard({
   name,
+  avatar,
   speaking,
   stream,
   isLocal = false,
@@ -127,14 +129,18 @@ export function ParticipantCard({
 
       {!isVideoActive && (
         <div
-          className={`relative z-10 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-lg sm:text-xl font-bold transition-all
+          className={`relative z-10 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-lg sm:text-xl font-bold transition-all overflow-hidden
             ${
               speaking
                 ? "bg-cyan-500 text-white shadow-[0_0_15px_rgba(34,211,238,0.6)]"
                 : "bg-gray-700 text-gray-300"
             }`}
         >
-          {initials}
+          {avatar ? (
+            <img src={avatar} alt={name} className="w-full h-full object-cover" />
+          ) : (
+            initials
+          )}
         </div>
       )}
 

@@ -35,6 +35,7 @@ interface VideoGridProps {
   totalPersonas: number;
   screenStream?: MediaStream | null;
   currentUserId: string;
+  localAvatar?: string;
 }
 
 type GridItem = {
@@ -47,6 +48,7 @@ type GridItem = {
   camOn?: boolean;
   micOn?: boolean;
   speaking?: boolean;
+  avatar?: string;
 };
 
 // ── Subcomponente: un <video> que se auto-conecta a su MediaStream ────────
@@ -95,6 +97,7 @@ function VideoGrid({
   micOn,
   screenStream,
   currentUserId,
+  localAvatar,
 }: VideoGridProps) {
   // ── 1. Unificar todos los medios en un solo arreglo de GridItem ──
   const items: GridItem[] = useMemo(() => {
@@ -108,6 +111,7 @@ function VideoGrid({
       isLocal: true,
       stream: camOn ? localStream : null,
       name: "Tú",
+      avatar: localAvatar,
       camOn,
       micOn,
       speaking: false,
@@ -136,6 +140,7 @@ function VideoGrid({
         isLocal: false,
         stream: cameraStream,
         name: peer.name,
+        avatar: peer.avatar,
         camOn: peer.camOn,
         micOn: peer.micOn,
         speaking: peer.speaking,
@@ -159,6 +164,7 @@ function VideoGrid({
     return list;
   }, [
     currentUserId,
+    localAvatar,
     camOn,
     localStream,
     micOn,
@@ -204,6 +210,7 @@ function VideoGrid({
       return (
         <ParticipantCard
           name={item.name}
+          avatar={item.avatar}
           speaking={item.speaking ?? false}
           stream={item.stream}
           camOn={item.camOn ?? false}
@@ -790,6 +797,7 @@ function RoomPage() {
               totalPersonas={totalPersonas}
               screenStream={screenStream}
               currentUserId={currentUserId}
+              localAvatar={userLogged?.photoURL ?? undefined}
             />
           </div>
         </main>
