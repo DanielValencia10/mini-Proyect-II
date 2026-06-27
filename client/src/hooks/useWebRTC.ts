@@ -182,14 +182,16 @@ export function useWebRTC(
       }
 
       pc.ontrack = (event) => {
-        // Detectar si el track es de pantalla usando el índice del transceiver.
-        // El índice 2 es siempre el transceiver de pantalla (pre-creado).
         const allTransceivers = pc.getTransceivers();
         const tcvrIndex = allTransceivers.indexOf(event.transceiver);
-        const isScreen = tcvrIndex === 2;
+
+        // El track de pantalla es siempre el último en llegar (índice >= 2)
+        // y tiene direction recvonly en el receptor
+        const isScreen = tcvrIndex >= 2 &&
+          event.track.kind === 'video' &&
+          event.transceiver.direction === 'recvonly';
 
         if (isScreen) {
-          if (event.track.kind !== "video") return;
           console.log(`🖥️ [WebRTC] Pantalla compartida recibida de ${remoteUserId}`);
           const screenStream = event.streams[0] ?? new MediaStream([event.track]);
           setRemoteScreenStreams((prev) => {
@@ -206,7 +208,6 @@ export function useWebRTC(
           };
           return;
         }
-
         // Índices 0 y 1 → audio y video de cámara
         console.log(`🎵 [WebRTC] Track recibido: ${event.track.kind} de ${remoteUserId}`);
         const stream = event.streams[0];
