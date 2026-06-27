@@ -38,7 +38,7 @@ export function useWebRTC(
   );
   const audioSenders = useRef<Map<string, RTCRtpSender>>(new Map());
   const videoSenders = useRef<Map<string, RTCRtpSender>>(new Map());
-  const screenTransceivers = useRef<Map<string, RTCRtpTransceiver>>(new Map());
+  const screenSenders = useRef<Map<string, RTCRtpSender>>(new Map());
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([]);
 
   // ── Screen share: estado y referencias ────────────────────────────
@@ -97,7 +97,7 @@ export function useWebRTC(
       peerConnections.current.clear();
       pendingCandidates.current.clear();
       cameraStreamId.current.clear();
-      screenTransceivers.current.clear();
+      screenSenders.current.clear();
       setRemoteStreams([]);
       setRemoteScreenStreams(new Map());
       socket.emit("join-call", { roomId: roomIdRef.current });
@@ -126,7 +126,7 @@ export function useWebRTC(
         cameraStreamId.current.delete(remoteUserId);
         audioSenders.current.delete(remoteUserId);
         videoSenders.current.delete(remoteUserId);
-        screenTransceivers.current.delete(remoteUserId);
+        screenSenders.current.delete(remoteUserId);
         setRemoteStreams((prev) =>
           prev.filter((s) => s.userId !== remoteUserId),
         );
@@ -165,55 +165,45 @@ export function useWebRTC(
       if (audioSender) audioSenders.current.set(remoteUserId, audioSender);
       if (videoSender) videoSenders.current.set(remoteUserId, videoSender);
 
-      // Pre-crear transceiver de pantalla (siempre, inactive por defecto).
-      // Esto garantiza que todos los PCs tienen SIEMPRE 3 m-lines en el mismo
-      // orden [audio, video-cámara, video-pantalla], eliminando el error de
-      // "m-lines order mismatch" que ocurría al agregar un transceiver nuevo
-      // después de la negociación inicial.
-      const screenTcvr = pc.addTransceiver("video", { direction: "recvonly" });
-      screenTransceivers.current.set(remoteUserId, screenTcvr);
-
+      // Si este usuario ya está compartiendo pantalla, agregar el track al nuevo PC
+      // con su MediaStream asociado para que el receptor lo identifique correctamente.
       if (localScreenStreamRef.current) {
         const screenTrack = localScreenStreamRef.current.getVideoTracks()[0];
         if (screenTrack) {
-          screenTcvr.sender.replaceTrack(screenTrack);
-          screenTcvr.direction = "sendonly";
+          const screenSender = pc.addTrack(screenTrack, localScreenStreamRef.current);
+          screenSenders.current.set(remoteUserId, screenSender);
         }
       }
 
       pc.ontrack = (event) => {
-        // Detectar si el track es de pantalla usando el índice del transceiver.
-        // El índice 2 es siempre el transceiver de pantalla (pre-creado).
-        const allTransceivers = pc.getTransceivers();
-        const tcvrIndex = allTransceivers.indexOf(event.transceiver);
-        const isScreen = tcvrIndex === 2;
-
-        if (isScreen) {
-          if (event.track.kind !== "video") return;
-          console.log(`🖥️ [WebRTC] Pantalla compartida recibida de ${remoteUserId}`);
-          const screenStream = event.streams[0] ?? new MediaStream([event.track]);
-          setRemoteScreenStreams((prev) => {
-            const next = new Map(prev);
-            next.set(remoteUserId, screenStream);
-            return next;
-          });
-          event.track.onended = () => {
-            setRemoteScreenStreams((prev) => {
-              const next = new Map(prev);
-              next.delete(remoteUserId);
-              return next;
-            });
-          };
-          return;
-        }
-
-        // Índices 0 y 1 → audio y video de cámara
         console.log(`🎵 [WebRTC] Track recibido: ${event.track.kind} de ${remoteUserId}`);
         const stream = event.streams[0];
         if (!stream) return;
 
         setRemoteStreams((currentRemoteStreams) => {
           const knownCameraStreamId = cameraStreamId.current.get(remoteUserId);
+
+          // Stream diferente al de cámara + es video → es pantalla compartida
+          if (knownCameraStreamId && stream.id !== knownCameraStreamId && event.track.kind === "video") {
+            console.log(`🖥️ [WebRTC] Pantalla compartida detectada de ${remoteUserId}`);
+            setRemoteScreenStreams((prev) => {
+              const next = new Map(prev);
+              next.set(remoteUserId, stream);
+              return next;
+            });
+            stream.addEventListener("removetrack", () => {
+              if (stream.getVideoTracks().length === 0) {
+                setRemoteScreenStreams((prev) => {
+                  const next = new Map(prev);
+                  next.delete(remoteUserId);
+                  return next;
+                });
+              }
+            });
+            return currentRemoteStreams;
+          }
+
+          // Primera vez que vemos un stream de este peer → es la cámara
           if (!knownCameraStreamId) {
             cameraStreamId.current.set(remoteUserId, stream.id);
             if (currentRemoteStreams.some((s) => s.userId === remoteUserId))
@@ -502,7 +492,7 @@ export function useWebRTC(
       cameraStreamId.current.delete(data.userId);
       audioSenders.current.delete(data.userId);
       videoSenders.current.delete(data.userId);
-      screenTransceivers.current.delete(data.userId);
+      screenSenders.current.delete(data.userId);
       setRemoteStreams((prev) => prev.filter((s) => s.userId !== data.userId));
       setRemoteScreenStreams((prev) => {
         const next = new Map(prev);
@@ -536,7 +526,7 @@ export function useWebRTC(
       });
 
       pcs.clear();
-      screenTransceivers.current.clear();
+      screenSenders.current.clear();
     };
   }, [
     socket,
@@ -567,7 +557,7 @@ export function useWebRTC(
       pcs.clear();
       audioSenders.current.clear();
       videoSenders.current.clear();
-      screenTransceivers.current.clear();
+      screenSenders.current.clear();
     };
   }, []);
 
@@ -594,7 +584,7 @@ export function useWebRTC(
     cameraStreamId.current.clear();
     audioSenders.current.clear();
     videoSenders.current.clear();
-    screenTransceivers.current.clear();
+    screenSenders.current.clear();
     localScreenStreamRef.current = null;
     setRemoteStreams([]);
     setRemoteScreenStreams(new Map());
@@ -613,16 +603,18 @@ export function useWebRTC(
     const track = stream.getVideoTracks()[0];
     if (!track) return;
 
-    // Usar el transceiver pre-creado (índice 2) en lugar de addTransceiver.
-    // Esto evita agregar nuevos m-lines y el error de reordenamiento de m-lines.
-    for (const [userId] of peerConnections.current.entries()) {
-      const pc = peerConnections.current.get(userId);
-      if (!pc || pc.signalingState === "closed") continue;
-      const screenTcvr = screenTransceivers.current.get(userId);
-      if (!screenTcvr) continue;
-      await screenTcvr.sender.replaceTrack(track);
-      if (screenTcvr.direction !== "sendonly") {
-        screenTcvr.direction = "sendonly"; // dispara onnegotiationneeded
+    for (const [userId, pc] of peerConnections.current.entries()) {
+      if (pc.signalingState === "closed") continue;
+
+      const existingSender = screenSenders.current.get(userId);
+      if (existingSender) {
+        // El m-line ya existe: solo reemplazar el track (sin renegociación de m-lines)
+        await existingSender.replaceTrack(track);
+      } else {
+        // Primera vez compartiendo con este peer: addTrack asocia el track al stream
+        // correctamente (a=msid en el SDP) → onnegotiationneeded se dispara solo
+        const sender = pc.addTrack(track, stream);
+        screenSenders.current.set(userId, sender);
       }
     }
   }, []);
@@ -637,15 +629,13 @@ export function useWebRTC(
   const unpublishScreenTrack = useCallback(async () => {
     if (!localScreenStreamRef.current) return;
 
-    for (const [userId] of peerConnections.current.entries()) {
-      const pc = peerConnections.current.get(userId);
-      if (!pc || pc.signalingState === "closed") continue;
-      const screenTcvr = screenTransceivers.current.get(userId);
-      if (!screenTcvr) continue;
-      await screenTcvr.sender.replaceTrack(null);
-      if (screenTcvr.direction !== "recvonly") {
-        screenTcvr.direction = "recvonly"; // dispara onnegotiationneeded
-      }
+    for (const [userId, pc] of peerConnections.current.entries()) {
+      if (pc.signalingState === "closed") continue;
+      const sender = screenSenders.current.get(userId);
+      if (!sender) continue;
+      // Reemplazar con null mantiene el m-line (evita reordenamiento en re-share)
+      // y dispara onnegotiationneeded para que el receptor sepa que paró
+      await sender.replaceTrack(null);
     }
     localScreenStreamRef.current = null;
   }, []);
