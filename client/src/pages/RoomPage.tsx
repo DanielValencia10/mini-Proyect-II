@@ -34,7 +34,6 @@ interface VideoGridProps {
   currentUserId: string;
   localAvatar?: string;
   presentationMode: boolean;
-  onTogglePresentationMode: () => void;
 }
 
 type ActiveScreen = {
@@ -126,7 +125,6 @@ function VideoGrid({
   currentUserId,
   localAvatar,
   presentationMode,
-  onTogglePresentationMode,
 }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -896,7 +894,6 @@ function RoomPage() {
               currentUserId={currentUserId}
               localAvatar={userLogged?.photoURL ?? undefined}
               presentationMode={presentationMode}
-              onTogglePresentationMode={() => setPresentationMode((v) => !v)}
             />
           </div>
         </main>
