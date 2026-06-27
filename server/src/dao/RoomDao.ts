@@ -21,10 +21,13 @@ class RoomDao {
 
     async getRoomsByOwner(ownerId: string) {
         try {
-            const snap = await this.col.where('ownerId', '==', ownerId).orderBy('createdAt', 'desc').get()
+            const snap = await this.col.where('ownerId', '==', ownerId).get()
             const data = snap.docs.map(d => d.data() as RoomData)
             return { success: true, data }
-        } catch { return { success: false, data: [] } }
+        } catch (err) {
+            console.error('Error en getRoomsByOwner:', err)
+            return { success: false, data: [] }
+        }
     }
 
     async createRoom(room: RoomData) {

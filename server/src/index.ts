@@ -37,7 +37,12 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return;
   }
 
-  const url = req.url ?? '/';
+  let url = req.url ?? '/';
+
+  // Normalizar la ruta para colapsar barras consecutivas (ej. de http://localhost:3000//users a /users)
+  const urlParts = url.split('?');
+  urlParts[0] = urlParts[0].replace(/\/+/g, '/');
+  url = urlParts.join('?');
 
   // 💡 Interceptor de Socket.IO (No tocar, permite el paso de WSS)
   if (url.startsWith('/socket.io')) {

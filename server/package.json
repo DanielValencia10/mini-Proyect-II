@@ -4,9 +4,9 @@
   "description": "Backend Node.js nativo + TypeScript + Socket.IO + Firebase Admin",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "nodemon --exec \"node --env-file=.env -r ts-node/register src/index.ts\"",
-    "dev:api": "nodemon --exec \"node --env-file=.env -r ts-node/register src/api.ts\"",
-    "dev:realtime": "nodemon --exec \"node --env-file=.env -r ts-node/register src/realtime.ts\"",
+    "dev": "nodemon -e ts,json --exec \"node --env-file=.env -r ts-node/register src/index.ts\"",
+    "dev:api": "nodemon -e ts,json --exec \"node --env-file=.env -r ts-node/register src/api.ts\"",
+    "dev:realtime": "nodemon -e ts,json --exec \"node --env-file=.env -r ts-node/register src/realtime.ts\"",
     "build": "tsc",
     "start": "node dist/index.js",
     "start:api": "node dist/api.js",
