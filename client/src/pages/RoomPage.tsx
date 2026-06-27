@@ -87,13 +87,16 @@ function ScreenVideo({
   }, [stream]);
 
   return (
-    <video
-      ref={ref}
-      autoPlay
-      playsInline
-      muted={muted}
-      className={className ?? "w-full h-full object-contain"}
-    />
+    <>
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video
+        ref={ref}
+        autoPlay
+        playsInline
+        muted={muted}
+        className={className ?? "w-full h-full object-contain"}
+      />
+    </>
   );
 }
 
@@ -842,8 +845,8 @@ function RoomPage() {
             <button
               onClick={() => setPresentationMode((v) => !v)}
               className={`p-1.5 rounded-lg transition-all ${presentationMode
-                  ? "bg-cyan-500 text-gray-950"
-                  : "bg-gray-800/80 hover:bg-gray-700 text-white"
+                ? "bg-cyan-500 text-gray-950"
+                : "bg-gray-800/80 hover:bg-gray-700 text-white"
                 }`}
               title={presentationMode ? "Volver a cuadrícula" : "Modo presentación"}
             >
@@ -958,7 +961,7 @@ interface PermissionModalProps {
   onClose: () => void;
   onRetry: () => void;
 }
-// eslint-disable-next-line no-unused-vars
+
 function PermissionModal({
   isOpen,
   type,
