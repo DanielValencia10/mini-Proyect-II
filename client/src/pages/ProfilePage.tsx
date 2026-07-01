@@ -289,6 +289,7 @@ export default function ProfilePage() {
                     value={isEditing ? editForm.nombres : profileData.nombres}
                     onChange={handleEditChange}
                     readOnly={!isEditing}
+                    tabIndex={isEditing ? undefined : -1}
                     placeholder="Juan"
                     required
                     aria-invalid={!!errors.nombres}
@@ -314,6 +315,7 @@ export default function ProfilePage() {
                     value={isEditing ? editForm.apellidos : profileData.apellidos}
                     onChange={handleEditChange}
                     readOnly={!isEditing}
+                    tabIndex={isEditing ? undefined : -1}
                     placeholder="Pérez"
                     required
                     aria-invalid={!!errors.apellidos}
@@ -342,6 +344,7 @@ export default function ProfilePage() {
                   onChange={handleEditChange}
                   onBlur={isEditing ? handleUsernameBlur : undefined}
                   readOnly={!isEditing}
+                  tabIndex={isEditing ? undefined : -1}
                   placeholder="juanperez"
                   required
                   aria-invalid={!!errors.username}
@@ -374,6 +377,7 @@ export default function ProfilePage() {
                     value={isEditing ? editForm.email : profileData.email}
                     onChange={handleEditChange}
                     readOnly={!isEditing}
+                    tabIndex={isEditing ? undefined : -1}
                     placeholder="juan.perez@correo.com"
                     required
                     aria-invalid={!!errors.email}
@@ -400,6 +404,7 @@ export default function ProfilePage() {
                     type="email"
                     value={profileData.email}
                     readOnly
+                    tabIndex={-1}
                     className="w-full pl-12 pr-4 py-3 bg-neutral-100 border-2 border-neutral-200 rounded-md text-neutral-600 placeholder:text-neutral-400 cursor-not-allowed disabled:opacity-75"
                   />
                 </div>

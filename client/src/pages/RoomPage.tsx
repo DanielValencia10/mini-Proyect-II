@@ -178,7 +178,7 @@ function VideoGrid({
     }
 
     return screens;
-  }, [screenStream, remoteScreenStreams, currentUserId]);
+  }, [screenStream, Array.from(remoteScreenStreams.entries()) , currentUserId]);
 
   // ── 2. Pantalla seleccionada para modo presentación ──────────────────────
   const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
@@ -296,7 +296,7 @@ function VideoGrid({
                   <button
                     key={screen.ownerId}
                     onClick={() => setSelectedOwnerId(screen.ownerId)}
-                    className="relative w-40 aspect-video flex-shrink-0 rounded-lg overflow-hidden border-2 border-gray-700 hover:border-cyan-500 transition-colors"
+                    className="relative w-40 aspect-video flex-shrink-0 rounded-lg overflow-hidden border-2 border-gray-700 hover:border-cyan-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
                     title={`Ver pantalla de ${getOwnerName(screen.ownerId, screen.isLocal)} en grande`}
                   >
                     <ScreenVideo
@@ -422,6 +422,19 @@ function RoomPage() {
   const [modalPermissionType, setModalPermissionType] = useState<
     "camera" | "mic" | "both"
   >("camera");
+
+  const chatToggleFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (room.chatOpen) {
+      chatToggleFocusRef.current = document.activeElement as HTMLElement;
+    } else {
+      if (chatToggleFocusRef.current) {
+        chatToggleFocusRef.current.focus();
+        chatToggleFocusRef.current = null;
+      }
+    }
+  }, [room.chatOpen]);
   
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
@@ -809,7 +822,7 @@ function RoomPage() {
                 setTimeout(() => setCopied(false), 2000);
               }
             }}
-            className="flex items-center gap-1.5 text-cyan-400 text-sm hover:text-cyan-300 hover:bg-gray-800 px-2 py-1 rounded transition-all active:scale-95 group"
+            className="flex items-center gap-1.5 text-cyan-400 text-sm hover:text-cyan-300 hover:bg-gray-800 px-2 py-1 rounded transition-all active:scale-95 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
             title="Copiar código de sala"
           >
             <Hash className="h-4 w-4" />
@@ -828,7 +841,7 @@ function RoomPage() {
           {hasScreenShare && (
             <button
               onClick={() => setPresentationMode((v) => !v)}
-              className={`p-1.5 rounded-lg transition-all ${
+              className={`p-1.5 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none ${
                 presentationMode
                   ? "bg-cyan-500 text-gray-950"
                   : "bg-gray-800/80 hover:bg-gray-700 text-white"
@@ -871,7 +884,7 @@ function RoomPage() {
               );
               setShowPermissionModal(true);
             }}
-            className="ml-4 shrink-0 px-3 py-1 bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-medium rounded-lg transition-all shadow-sm"
+            className="ml-4 shrink-0 px-3 py-1 bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-medium rounded-lg transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus:outline-none"
           >
             Configurar
           </button>
@@ -953,6 +966,58 @@ function PermissionModal({
   onClose,
   onRetry,
 }: PermissionModalProps) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const retryRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      closeRef.current?.focus();
+    } else {
+      if (previousFocusRef.current) {
+        previousFocusRef.current.focus();
+        previousFocusRef.current = null;
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (previousFocusRef.current) {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        if (!closeRef.current || !retryRef.current) return;
+        const active = document.activeElement;
+        if (e.shiftKey) {
+          if (active === closeRef.current) {
+            retryRef.current.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (active === retryRef.current) {
+            closeRef.current.focus();
+            e.preventDefault();
+          }
+        }
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("keydown", handleKey);
+    }
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const title =
@@ -977,6 +1042,7 @@ function PermissionModal({
         onClick={onClose}
         aria-label="Cerrar modal"
         type="button"
+        tabIndex={-1}
       />
 
       {/* Contenedor del Modal */}
@@ -1060,14 +1126,16 @@ function PermissionModal({
         {/* Botones de acción */}
         <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
           <button
+            ref={closeRef}
             onClick={onClose}
-            className="w-full sm:order-1 py-2.5 px-4 bg-gray-800 hover:bg-gray-700 active:bg-gray-950 text-gray-300 font-semibold rounded-xl transition-all border border-gray-700/50"
+            className="w-full sm:order-1 py-2.5 px-4 bg-gray-800 hover:bg-gray-700 active:bg-gray-950 text-gray-300 font-semibold rounded-xl transition-all border border-gray-700/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
           >
             Cerrar
           </button>
           <button
+            ref={retryRef}
             onClick={onRetry}
-            className="w-full sm:order-2 py-2.5 px-4 bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-gray-950 font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center justify-center gap-2"
+            className="w-full sm:order-2 py-2.5 px-4 bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-gray-950 font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
           >
             <svg
               className="w-4 h-4"
