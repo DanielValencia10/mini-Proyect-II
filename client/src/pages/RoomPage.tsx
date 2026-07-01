@@ -822,6 +822,7 @@ function RoomPage() {
                 setTimeout(() => setCopied(false), 2000);
               }
             }}
+            aria-label={copied ? "Código copiado" : `Copiar código de sala: ${id}`}
             className="flex items-center gap-1.5 text-cyan-400 text-sm hover:text-cyan-300 hover:bg-gray-800 px-2 py-1 rounded transition-all active:scale-95 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
             title="Copiar código de sala"
           >
@@ -841,6 +842,8 @@ function RoomPage() {
           {hasScreenShare && (
             <button
               onClick={() => setPresentationMode((v) => !v)}
+              aria-label={presentationMode ? "Volver a cuadrícula" : "Modo presentación"}
+              aria-pressed={presentationMode}
               className={`p-1.5 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none ${
                 presentationMode
                   ? "bg-cyan-500 text-gray-950"
@@ -884,6 +887,7 @@ function RoomPage() {
               );
               setShowPermissionModal(true);
             }}
+            aria-label="Configurar permisos de cámara y micrófono"
             className="ml-4 shrink-0 px-3 py-1 bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-medium rounded-lg transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus:outline-none"
           >
             Configurar
