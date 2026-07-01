@@ -58,12 +58,12 @@ export function RoomCard({ room, onDelete, onRename }: Props) {
                                 onKeyDown={e => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') setEditing(false) }}
                                 maxLength={50}
                                 ref={inputRef}
-                                className="flex-1 border border-blue-400 rounded px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+                                className="flex-1 border border-blue-400 rounded px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none focus:ring-0 outline-none"
                             />
-                            <button onClick={handleSaveRename} disabled={saving} aria-label="Guardar nombre" className="text-green-600 hover:text-green-700 disabled:opacity-50">
+                            <button onClick={handleSaveRename} disabled={saving} aria-label="Guardar nombre" className="text-green-600 hover:text-green-700 disabled:opacity-50 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus:outline-none p-0.5">
                                 <Check className="h-4 w-4" />
                             </button>
-                            <button onClick={() => { setEditing(false); setEditName(room.name) }} aria-label="Cancelar edición" className="text-gray-400 hover:text-gray-600">
+                            <button onClick={() => { setEditing(false); setEditName(room.name) }} aria-label="Cancelar edición" className="text-gray-400 hover:text-gray-600 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus:outline-none p-0.5">
                                 <X className="h-4 w-4" />
                             </button>
                         </div>
@@ -79,7 +79,7 @@ export function RoomCard({ room, onDelete, onRename }: Props) {
 
                 <button
                     onClick={copyId}
-                    className="flex items-center gap-1 text-gray-500 text-sm mb-2 hover:text-blue-600 transition-colors group"
+                    className="flex items-center gap-1 text-gray-500 text-sm mb-2 hover:text-blue-600 transition-colors group rounded px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                     aria-label="Copiar ID de sala"
                 >
                     <Hash className="h-4 w-4" />
@@ -98,7 +98,7 @@ export function RoomCard({ room, onDelete, onRename }: Props) {
             <div className="flex items-center gap-2">
                 <button
                     onClick={() => navigate(`/room/${room.id}`)}
-                    className="flex-1 bg-blue-800 hover:bg-blue-900 text-white py-2 rounded-lg font-medium transition-colors"
+                    className="flex-1 bg-blue-800 hover:bg-blue-900 text-white py-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                 >
                     Entrar
                 </button>
@@ -107,14 +107,14 @@ export function RoomCard({ room, onDelete, onRename }: Props) {
                         <button
                             onClick={() => { setEditing(true); setEditName(room.name) }}
                             aria-label="Editar nombre de sala"
-                            className="p-2 text-gray-400 hover:text-blue-600 border border-gray-200 rounded-lg transition-colors"
+                            className="p-2 text-gray-400 hover:text-blue-600 border border-gray-200 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                         >
                             <Pencil className="h-5 w-5" />
                         </button>
                         <button
                             onClick={() => onDelete(room.id)}
                             aria-label="Eliminar sala"
-                            className="p-2 text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg transition-colors"
+                            className="p-2 text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus:outline-none"
                         >
                             <Trash2 className="h-5 w-5" />
                         </button>

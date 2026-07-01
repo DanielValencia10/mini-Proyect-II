@@ -17,15 +17,56 @@ export default function ConfirmDialog({
   onConfirm, onCancel,
 }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    if (open) cancelRef.current?.focus()
+    if (open) {
+      previousFocusRef.current = document.activeElement as HTMLElement
+      cancelRef.current?.focus()
+    } else {
+      if (previousFocusRef.current) {
+        previousFocusRef.current.focus()
+        previousFocusRef.current = null
+      }
+    }
   }, [open])
 
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+    return () => {
+      if (previousFocusRef.current) {
+        previousFocusRef.current.focus()
+      }
     }
+  }, [])
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel()
+        return
+      }
+
+      if (e.key === 'Tab') {
+        if (!cancelRef.current || !confirmRef.current) return
+
+        const active = document.activeElement
+        if (e.shiftKey) {
+          // Shift + Tab: if focus is on cancel, wrap around to confirm
+          if (active === cancelRef.current) {
+            confirmRef.current.focus()
+            e.preventDefault()
+          }
+        } else {
+          // Tab: if focus is on confirm, wrap around to cancel
+          if (active === confirmRef.current) {
+            cancelRef.current.focus()
+            e.preventDefault()
+          }
+        }
+      }
+    }
+
     if (open) document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [open, onCancel])
@@ -57,14 +98,15 @@ export default function ConfirmDialog({
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
           >
             {cancelLabel}
           </button>
           <button
+            ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-800 hover:bg-blue-900 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-800 hover:bg-blue-900 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
           >
             {confirmLabel}
           </button>
@@ -73,3 +115,4 @@ export default function ConfirmDialog({
     </div>
   )
 }
+

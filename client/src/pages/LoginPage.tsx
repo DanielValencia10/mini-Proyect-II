@@ -146,7 +146,7 @@ export default function LoginPage() {
                 <div className="mt-6 text-center">
                   <p className="text-sm text-neutral-600">
                     ¿No tienes una cuenta?{' '}
-                    <Link to="/register" className="text-primary-700 hover:text-primary-900 font-semibold">
+                    <Link to="/register" className="text-primary-700 hover:text-primary-900 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 rounded px-1 focus:outline-none">
                       Regístrate aquí
                     </Link>
                   </p>

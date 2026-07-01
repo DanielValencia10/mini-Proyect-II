@@ -10,14 +10,38 @@ interface Props {
 
 export default function AlertDialog({ open, title, message, onClose }: Props) {
     const btnRef = useRef<HTMLButtonElement>(null)
+    const previousFocusRef = useRef<HTMLElement | null>(null)
 
     useEffect(() => {
-        if (open) btnRef.current?.focus()
+        if (open) {
+            previousFocusRef.current = document.activeElement as HTMLElement
+            btnRef.current?.focus()
+        } else {
+            if (previousFocusRef.current) {
+                previousFocusRef.current.focus()
+                previousFocusRef.current = null
+            }
+        }
     }, [open])
 
     useEffect(() => {
+        return () => {
+            if (previousFocusRef.current) {
+                previousFocusRef.current.focus()
+            }
+        }
+    }, [])
+
+    useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' || e.key === 'Enter') onClose()
+            if (e.key === 'Escape' || e.key === 'Enter') {
+                onClose()
+                return
+            }
+            if (e.key === 'Tab') {
+                e.preventDefault()
+                btnRef.current?.focus()
+            }
         }
         if (open) document.addEventListener('keydown', handleKey)
         return () => document.removeEventListener('keydown', handleKey)
@@ -51,7 +75,7 @@ export default function AlertDialog({ open, title, message, onClose }: Props) {
                         ref={btnRef}
                         type="button"
                         onClick={onClose}
-                        className="px-6 py-2 text-sm font-medium text-white bg-blue-800 hover:bg-blue-900 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        className="px-6 py-2 text-sm font-medium text-white bg-blue-800 hover:bg-blue-900 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                     >
                         OK
                     </button>

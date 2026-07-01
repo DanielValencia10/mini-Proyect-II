@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, Hash, LogOut, User, Video, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../stores/useAuthStore'
@@ -53,6 +53,16 @@ function Dashboard() {
     const [joinId, setJoinId] = useState('')
     const [joinError, setJoinError] = useState('')
     const [saving, setSaving] = useState(false)
+    const createInputRef = useRef<HTMLInputElement>(null)
+    const joinInputRef = useRef<HTMLInputElement>(null)
+
+    // Foco programático al abrir los paneles (reemplaza autoFocus para cumplir jsx-a11y/no-autofocus)
+    useEffect(() => {
+        if (showCreate) createInputRef.current?.focus()
+    }, [showCreate])
+    useEffect(() => {
+        if (showJoin) joinInputRef.current?.focus()
+    }, [showJoin])
     const [joining, setJoining] = useState(false)
 
     const handleCreate = async () => {
@@ -99,14 +109,14 @@ function Dashboard() {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => navigate('/profile')}
-                        className="bg-gray-100 rounded-full p-2 hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        className="bg-gray-100 rounded-full p-2 hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                         aria-label="Editar perfil"
                     >
                         <Settings className="h-5 w-5 text-gray-500" />
                     </button>
                     <button
                         onClick={() => navigate('/profile')}
-                        className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 rounded px-2 py-1"
+                        className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer rounded px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                         aria-label="Ver perfil"
                     >
                         <div className="bg-gray-100 rounded-full p-1 flex-shrink-0 w-10 h-10 flex items-center justify-center overflow-hidden">
@@ -121,7 +131,7 @@ function Dashboard() {
                             <p className="text-gray-400 truncate">@{username}</p>
                         </div>
                     </button>
-                    <button onClick={() => setShowLogoutConfirm(true)} aria-label="Cerrar sesión" className="ml-2 text-gray-400 hover:text-red-500 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 rounded">
+                    <button onClick={() => setShowLogoutConfirm(true)} aria-label="Cerrar sesión" className="ml-2 text-gray-400 hover:text-red-500 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus:outline-none">
                         <LogOut className="h-5 w-5" />
                     </button>
                 </div>
@@ -137,13 +147,13 @@ function Dashboard() {
                 <div className="grid grid-cols-2 gap-4 mb-10">
                     <button
                         onClick={() => { setShowCreate(true); setShowJoin(false) }}
-                        className="flex items-center justify-center gap-2 bg-blue-800 hover:bg-blue-900 text-white py-4 rounded-lg font-semibold text-lg transition-colors"
+                        className="flex items-center justify-center gap-2 bg-blue-800 hover:bg-blue-900 text-white py-4 rounded-lg font-semibold text-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                     >
                         <Plus className="h-5 w-5" />Crear Nueva Sala
                     </button>
                     <button
                         onClick={() => { setShowJoin(true); setShowCreate(false) }}
-                        className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white py-4 rounded-lg font-semibold text-lg transition-colors"
+                        className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white py-4 rounded-lg font-semibold text-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus:outline-none"
                     >
                         <Hash className="h-5 w-5" />Unirse con ID
                     </button>
@@ -154,22 +164,23 @@ function Dashboard() {
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex flex-col gap-2">
                         <div className="flex gap-3 items-center">
                             <input
+                                ref={createInputRef}
                                 value={roomName}
                                 onChange={e => { setRoomName(e.target.value); setRoomNameError('') }}
                                 onKeyDown={e => e.key === 'Enter' && handleCreate()}
                                 placeholder="Nombre de la sala..."
                                 aria-invalid={!!roomNameError}
-                                className={`flex-1 border rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-400 text-sm ${roomNameError ? 'border-red-400' : 'border-gray-200'}`}
+                                className={`flex-1 border rounded-lg px-4 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none focus:ring-0 text-sm ${roomNameError ? 'border-red-400' : 'border-gray-200'}`}
                             />
                             <button
                                 onClick={handleCreate}
                                 disabled={saving}
-                                className="bg-blue-800 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                                className="bg-blue-800 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none"
                             >
                                 {saving && <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />}
                                 Crear
                             </button>
-                            <button onClick={() => { setShowCreate(false); setRoomNameError('') }} className="text-gray-400 hover:text-gray-600 text-sm">
+                            <button onClick={() => { setShowCreate(false); setRoomNameError('') }} className="text-gray-400 hover:text-gray-600 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 rounded px-1.5 py-0.5 focus:outline-none">
                                 Cancelar
                             </button>
                         </div>
@@ -182,22 +193,23 @@ function Dashboard() {
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex flex-col gap-2">
                         <div className="flex gap-3 items-center">
                             <input
+                                ref={joinInputRef}
                                 value={joinId}
                                 onChange={e => { setJoinId(e.target.value); setJoinError('') }}
                                 onKeyDown={e => e.key === 'Enter' && handleJoin()}
                                 placeholder="ID de la sala (ej: ABC123)..."
                                 aria-invalid={!!joinError}
-                                className={`flex-1 border rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-teal-400 text-sm font-mono uppercase ${joinError ? 'border-red-400' : 'border-gray-200'}`}
+                                className={`flex-1 border rounded-lg px-4 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus:outline-none focus:ring-0 text-sm font-mono uppercase ${joinError ? 'border-red-400' : 'border-gray-200'}`}
                             />
                             <button
                                 onClick={handleJoin}
                                 disabled={joining}
-                                className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                                className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus:outline-none"
                             >
                                 {joining && <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />}
                                 Unirse
                             </button>
-                            <button onClick={() => { setShowJoin(false); setJoinError('') }} className="text-gray-400 hover:text-gray-600 text-sm">
+                            <button onClick={() => { setShowJoin(false); setJoinError('') }} className="text-gray-400 hover:text-gray-600 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 rounded px-1.5 py-0.5 focus:outline-none">
                                 Cancelar
                             </button>
                         </div>

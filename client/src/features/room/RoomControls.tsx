@@ -37,7 +37,7 @@ export function RoomControls({
   onToggleScreenShare,
   canShareScreen = true,
 }: Props) {
-  const base = "relative p-2 sm:p-2.5 md:p-3 rounded-full transition-all active:scale-95";
+  const base = "relative p-2 sm:p-2.5 md:p-3 rounded-full transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus:outline-none";
 
   const isMicBlocked =
     micPermission === "denied" || micPermission === "unavailable";
@@ -48,7 +48,15 @@ export function RoomControls({
     <footer className="shrink-0 bg-gray-900 border-t border-gray-800 px-2 sm:px-6 py-2 sm:py-4 flex items-center justify-center gap-1.5 sm:gap-4">
       <button
         onClick={onToggleMic}
-        className={`${base} ${
+        aria-label={
+          isMicBlocked
+            ? "Micrófono bloqueado - Haz clic para ver cómo habilitarlo"
+            : micOn
+              ? "Desactivar micrófono"
+              : "Activar micrófono"
+        }
+        aria-pressed={!isMicBlocked ? micOn : undefined}
+        className={`${base} focus-visible:ring-cyan-400 ${
           isMicBlocked
             ? "bg-red-950/40 border border-red-500/40 text-red-400 hover:bg-red-900/40"
             : micOn
@@ -85,7 +93,15 @@ export function RoomControls({
 
       <button
         onClick={onToggleCam}
-        className={`${base} ${
+        aria-label={
+          isCamBlocked
+            ? "Cámara bloqueada - Haz clic para ver cómo habilitarla"
+            : camOn
+              ? "Desactivar cámara"
+              : "Activar cámara"
+        }
+        aria-pressed={!isCamBlocked ? camOn : undefined}
+        className={`${base} focus-visible:ring-cyan-400 ${
           isCamBlocked
             ? "bg-red-950/40 border border-red-500/40 text-red-400 hover:bg-red-900/40"
             : camOn
@@ -127,7 +143,9 @@ export function RoomControls({
       {canShareScreen && (
         <button
           onClick={onToggleScreenShare}
-          className={`${base} ${
+          aria-label={screenSharing ? "Dejar de compartir pantalla" : "Compartir pantalla"}
+          aria-pressed={screenSharing}
+          className={`${base} focus-visible:ring-cyan-400 ${
             screenSharing
               ? "bg-cyan-600 hover:bg-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.5)]"
               : "bg-gray-700 hover:bg-gray-600 text-white"
@@ -142,14 +160,17 @@ export function RoomControls({
 
       <button
         onClick={onToggleChat}
-        className={`${base} ${chatOpen ? "bg-cyan-600 hover:bg-cyan-500" : "bg-gray-700 hover:bg-gray-600 text-white"}`}
+        aria-label={chatOpen ? "Cerrar chat" : "Abrir chat"}
+        aria-pressed={chatOpen}
+        className={`${base} focus-visible:ring-cyan-400 ${chatOpen ? "bg-cyan-600 hover:bg-cyan-500" : "bg-gray-700 hover:bg-gray-600 text-white"}`}
       >
         <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />
       </button>
 
       <button
         onClick={onLeave}
-        className={`${base} bg-red-600 hover:bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)] text-white`}
+        aria-label="Salir de la sala"
+        className={`${base} focus-visible:ring-red-400 bg-red-600 hover:bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)] text-white`}
       >
         <PhoneOff className="h-4 w-4 sm:h-5 sm:w-5" />
       </button>
