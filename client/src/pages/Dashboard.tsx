@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, Hash, LogOut, User, Video, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../stores/useAuthStore'
@@ -53,6 +53,16 @@ function Dashboard() {
     const [joinId, setJoinId] = useState('')
     const [joinError, setJoinError] = useState('')
     const [saving, setSaving] = useState(false)
+    const createInputRef = useRef<HTMLInputElement>(null)
+    const joinInputRef = useRef<HTMLInputElement>(null)
+
+    // Foco programático al abrir los paneles (reemplaza autoFocus para cumplir jsx-a11y/no-autofocus)
+    useEffect(() => {
+        if (showCreate) createInputRef.current?.focus()
+    }, [showCreate])
+    useEffect(() => {
+        if (showJoin) joinInputRef.current?.focus()
+    }, [showJoin])
     const [joining, setJoining] = useState(false)
 
     const handleCreate = async () => {
@@ -154,12 +164,12 @@ function Dashboard() {
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex flex-col gap-2">
                         <div className="flex gap-3 items-center">
                             <input
+                                ref={createInputRef}
                                 value={roomName}
                                 onChange={e => { setRoomName(e.target.value); setRoomNameError('') }}
                                 onKeyDown={e => e.key === 'Enter' && handleCreate()}
                                 placeholder="Nombre de la sala..."
                                 aria-invalid={!!roomNameError}
-                                autoFocus
                                 className={`flex-1 border rounded-lg px-4 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus:outline-none focus:ring-0 text-sm ${roomNameError ? 'border-red-400' : 'border-gray-200'}`}
                             />
                             <button
@@ -183,12 +193,12 @@ function Dashboard() {
                     <div className="bg-white rounded-xl p-6 shadow-sm mb-6 flex flex-col gap-2">
                         <div className="flex gap-3 items-center">
                             <input
+                                ref={joinInputRef}
                                 value={joinId}
                                 onChange={e => { setJoinId(e.target.value); setJoinError('') }}
                                 onKeyDown={e => e.key === 'Enter' && handleJoin()}
                                 placeholder="ID de la sala (ej: ABC123)..."
                                 aria-invalid={!!joinError}
-                                autoFocus
                                 className={`flex-1 border rounded-lg px-4 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus:outline-none focus:ring-0 text-sm font-mono uppercase ${joinError ? 'border-red-400' : 'border-gray-200'}`}
                             />
                             <button

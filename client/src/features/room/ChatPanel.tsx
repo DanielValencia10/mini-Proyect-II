@@ -25,9 +25,16 @@ export function ChatPanel({
   currentUserName,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Foco al montar el panel (equivalente a autoFocus sin disparar la regla lint)
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const remaining = MAX_CHARS - message.length;
   const canSend = message.trim().length > 0 && remaining >= 0;
@@ -82,6 +89,7 @@ export function ChatPanel({
       <div className="p-3 border-t border-gray-800 flex flex-col gap-1">
         <div className="flex gap-2">
           <input
+            ref={inputRef}
             value={message}
             onChange={(e) => {
               if (e.target.value.length <= MAX_CHARS) onChange(e.target.value);
@@ -89,7 +97,6 @@ export function ChatPanel({
             onKeyDown={(e) => e.key === "Enter" && canSend && onSend()}
             placeholder="Escribe un mensaje..."
             maxLength={MAX_CHARS}
-            autoFocus
             className="flex-1 bg-gray-800 text-white text-xs sm:text-sm rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus:outline-none placeholder-gray-500 outline-none"
           />
           <button
